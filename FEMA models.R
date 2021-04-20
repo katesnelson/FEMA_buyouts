@@ -19,9 +19,9 @@ wd<-getwd()
 ### Read in Data ###
 ####################
 
-community <- readRDS(paste0(wd,"/data/community_with_bo_summary_0922.rds"))
+community <- readRDS(paste0(wd,"/data/community_with_bo_summary_020521.rds"))
 
-neighborhood <- readRDS(paste0(wd,"/data/neighborhood_with_bo_summary_0930.rds"))
+neighborhood <- readRDS(paste0(wd,"/data/neighborhood_with_bo_summary_020521.rds"))
 
 individual <- readRDS(paste0(wd,"/data/individual_bo_with_neighborhood_0930.rds"))
 
@@ -63,20 +63,20 @@ dat<- dat_sf %>% st_drop_geometry(.) #same dataframe as above but without the ge
   
   #Possible transformations
   
-  df_plm<-dat %>% 
-    filter_at(tidyselect::all_of(p_vars), any_vars(.< 101)) %>% #get rid of outliers from poor data quality and incomplete records (no percent vars greater than 100%)
-    mutate_at(vars(all_of(t_vars)), ~log(. + invoke(min,na_if(.,0),na.rm=TRUE))) %>% #log transform to reduce skew, add small value so that measured values of zero don't become -Inf
-    mutate_if(is.numeric,~ifelse(abs(.) == Inf,NA,.))#remove produced infinite values
-  
-  df_plm<-dat %>% 
-    filter_at(tidyselect::all_of(p_vars), any_vars(.< 101)) %>% #get rid of outliers from poor data quality and incomplete records (no percent vars greater than 100%)
-    mutate_at(vars(all_of(t_vars)), ~log(. + 1)) %>% #log transform to reduce skew, add small value so that measured values of zero don't become -Inf
-    mutate_if(is.numeric,~ifelse(abs(.) == Inf,NA,.))#remove produced infinite values
-  
-  df_plm<-dat %>% 
-    filter_at(tidyselect::all_of(p_vars), any_vars(.< 101)) %>% #get rid of outliers from poor data quality and incomplete records (no percent vars greater than 100%)
-    mutate_at(vars(all_of(t_vars)), ~log(.)) %>% #log transform to reduce skew
-    mutate_if(is.numeric,~ifelse(abs(.) == Inf,NA,.))#remove produced infinite values
+  # df_plm<-dat %>% 
+  #   filter_at(tidyselect::all_of(p_vars), any_vars(.< 101)) %>% #get rid of outliers from poor data quality and incomplete records (no percent vars greater than 100%)
+  #   mutate_at(vars(all_of(t_vars)), ~log(. + invoke(min,na_if(.,0),na.rm=TRUE))) %>% #log transform to reduce skew, add small value so that measured values of zero don't become -Inf
+  #   mutate_if(is.numeric,~ifelse(abs(.) == Inf,NA,.))#remove produced infinite values
+  # 
+  # df_plm<-dat %>% 
+  #   filter_at(tidyselect::all_of(p_vars), any_vars(.< 101)) %>% #get rid of outliers from poor data quality and incomplete records (no percent vars greater than 100%)
+  #   mutate_at(vars(all_of(t_vars)), ~log(. + 1)) %>% #log transform to reduce skew, add small value so that measured values of zero don't become -Inf
+  #   mutate_if(is.numeric,~ifelse(abs(.) == Inf,NA,.))#remove produced infinite values
+  # 
+  # df_plm<-dat %>% 
+  #   filter_at(tidyselect::all_of(p_vars), any_vars(.< 101)) %>% #get rid of outliers from poor data quality and incomplete records (no percent vars greater than 100%)
+  #   mutate_at(vars(all_of(t_vars)), ~log(.)) %>% #log transform to reduce skew
+  #   mutate_if(is.numeric,~ifelse(abs(.) == Inf,NA,.))#remove produced infinite values
   
   df_plm<-dat %>% 
     filter_at(tidyselect::all_of(p_vars), any_vars(.< 101)) %>% #get rid of outliers from poor data quality and incomplete records (no percent vars greater than 100%)
@@ -93,7 +93,8 @@ dat<- dat_sf %>% st_drop_geometry(.) #same dataframe as above but without the ge
       nrow(df_plm %>% filter(`Data Measurement Year`==1990 & buyout ==1))
       
   
-  saveRDS(df_plm, "plmdata0930.rds") #going with scaled/standardized data
+  # saveRDS(df_plm, "plmdata020521.rds") #going with scaled/standardized data
+  # df_plm<-readRDS("plmdata020521.rds")
 
       #Check distributions and correlations
     
@@ -308,7 +309,159 @@ dat<- dat_sf %>% st_drop_geometry(.) #same dataframe as above but without the ge
                                   big.mark = ",", digits = 5, na_str = "NA")
     print(tbl, preview="docx")
     
+  
+ 
+#####################
+###BUYOUT DENSITY###
+####################
+    #can we say anything about where buyouts are more likely to be accepted? 
+    #Have more buyouts where you have more resources and more at risk homes so need to control for that. --> STATE FE and CNTY FE should help
+    #Dataset should only inlcude places that have had at least 1 buyout.
+    #Have controlled for population density so effects should account for fewer people and homes in the area.
+    
+# National models --> Only decade fixed effects
+    d_n1<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`), #controls
+             data=df_plm, na.action=na.omit) 
+      summary(d_n1, robust=T)
+      saveRDS(d_n1,"d_n1.rds")
+      car::vif(d_n1) #VIF all below 3
+      nat<- cbind (d_n1$coefficients, as.data.frame(d_n1$rpval))%>% rownames_to_column()#build a dataframe of results
+    
+    d_n2<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+               pci + p_low_ed + bg_housing_density + factor(`Data Measurement Year`), #controls --> check housing instead of pop density
+             data=df_plm, na.action=na.omit) 
+      summary(d_n2, robust=T) #not significantly different from n1
+      saveRDS(d_n2,"d_n2.rds") 
+    
+    d_n3<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #basic demographic breakdown
+               p_home_own +  #homeownership
+               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`), #controls
+             data=df_plm, na.action=na.omit)
+    summary(d_n3, robust=T) 
+    car::vif(d_n3) #VIF all below 3
+    saveRDS(d_n3,"d_n3.rds") 
+    
+    d_n5<-felm(density ~ p_dependents + p_seniors +  #basic demographic breakdown
+               p_black_ho + p_other_ho + p_hisp_ho +  #homeownership demographics
+               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`), #controls
+             data=df_plm, na.action=na.omit)
+    summary(d_n5, robust=T) 
+    car::vif(d_n5) #all below 3
+    saveRDS(d_n5,"d_n5.rds")
+    
+    d_n6<-felm(density ~ p_dependents + p_seniors +  #basic demographic breakdown
+               p_black_rent + p_other_rent + p_hisp_rent +  #rentership demographics
+               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`), #controls
+             data=df_plm, na.action=na.omit)
+    summary(d_n6, robust=T) 
+    car::vif(d_n6) 
+    saveRDS(d_n6,"d_n6.rds")
+    
+#State Fixed Effects Models --> State and Decade fixed effects
+    d_s1<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`) | `State Code` , data=df_plm, na.action=na.omit)
+    summary(d_s1, robust=T) 
+    saveRDS(d_s1,"d_s1.rds")
+    sfe<- cbind (d_s1$coefficients, as.data.frame(d_s1$rpval))%>% rownames_to_column()
+    
+    d_s3<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #basic demographic breakdown
+               p_home_own +  #homeownership
+               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`)  | `State Code` , data=df_plm, na.action=na.omit)
+    summary(d_s3, robust=T)
+    saveRDS(d_s3,"d_s3.rds")
+    
+    d_s5<-felm(density ~ p_dependents + p_seniors +  #basic demographic breakdown
+               p_black_ho + p_other_ho + p_hisp_ho +  #homeownership demographics
+               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`)  | `State Code` , data=df_plm, na.action=na.omit)
+    summary(d_s5, robust=T) 
+    saveRDS(d_s5,"d_s5.rds")
+    
+    d_s6<-felm(density ~ p_dependents + p_seniors +  #basic demographic breakdown
+               p_black_rent + p_other_rent + p_hisp_rent +  #rentership demographics
+               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`) | `State Code` , data=df_plm, na.action=na.omit)
+    summary(d_s6, robust=T) 
+    saveRDS(d_s6,"d_s6.rds")
+    
+    
+  #State-Decade fixed effects
+    d_sd1<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                pci + p_low_ed + bg_pop_density | StateDecade, data=df_plm, na.action=na.omit)
+    summary(d_sd1, robust=T)
+    saveRDS(d_sd1,"sd1.rds")
+    sdfe<- cbind (d_sd1$coefficients, as.data.frame(d_sd1$rpval))%>% rownames_to_column()
+    
+    d_sd5<-felm(density ~ p_dependents + p_seniors +  #basic demographic breakdown
+                p_black_ho + p_other_ho + p_hisp_ho +  #homeownership demographics
+                pci + p_low_ed + bg_pop_density | StateDecade, data=df_plm, na.action=na.omit)
+    summary(d_sd5, robust=T)
+    saveRDS(d_sd5,"d_sd5.rds")
+    
+    d_sd6<-felm(density ~ p_dependents + p_seniors +  #basic demographic breakdown
+                p_black_rent + p_other_rent + p_hisp_rent +  #rentership demographics
+                pci + p_low_ed + bg_pop_density | StateDecade, data=df_plm, na.action=na.omit)
+    summary(d_sd6, robust=T)
+    saveRDS(d_sd6,"d_sd6.rds")
+    
+    
+#County Fixed Effects Models
+    d_c1<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`)| CNTY , data=df_plm, na.action=na.omit)
+    summary(d_c1, robust=T) 
+    saveRDS(d_c1,"d_c1.rds")
+    cfe<-cbind (d_c1$coefficients, as.data.frame(d_c1$rpval))%>% rownames_to_column()
+    
+    d_c3<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #basic demographic breakdown
+               p_home_own +  #homeownership
+               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`)  | CNTY , data=df_plm, na.action=na.omit)
+    summary(d_c3, robust=T)
+    saveRDS(d_c3,"d_c3.rds")
+    
+    d_c5<-felm(density ~ p_dependents + p_seniors +  #basic demographic breakdown
+               p_black_ho + p_other_ho + p_hisp_ho +  #homeownership demographics
+               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`)  | CNTY , data=df_plm, na.action=na.omit)
+    summary(d_c5, robust=T) 
+    saveRDS(d_c5,"d_c5.rds")
+    
+    d_c6<-felm(density ~ p_dependents + p_seniors +  #basic demographic breakdown
+               p_black_rent + p_other_rent + p_hisp_rent +  #rentership demographics
+               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`) | CNTY , data=df_plm, na.action=na.omit)
+    summary(d_c6, robust=T) 
+    saveRDS(d_c6,"d_c6.rds")
+    
+  #County-decade fixed effects
+    d_cd1<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                pci + p_low_ed + bg_pop_density | CntyDecade, data=df_plm, na.action=na.omit)
+    summary(d_cd1, robust=T)
+    saveRDS(d_cd1,"d_cd1.rds")
+    cdfe<- cbind (d_cd1$coefficients, as.data.frame(d_cd1$rpval))%>% rownames_to_column()
+    
+    d_cd5<-felm(density ~ p_dependents + p_seniors +  #basic demographic breakdown
+                p_black_ho + p_other_ho + p_hisp_ho +  #homeownership demographics
+                pci + p_low_ed + bg_pop_density | CntyDecade, data=df_plm, na.action=na.omit)
+    summary(d_cd5, robust=T)
+    saveRDS(d_cd5,"d_cd5.rds")
+    
+    d_cd6<-felm(density ~ p_dependents + p_seniors +  #basic demographic breakdown
+                p_black_rent + p_other_rent + p_hisp_rent +  #rentership demographics
+                pci + p_low_ed + bg_pop_density | CntyDecade, data=df_plm, na.action=na.omit)
+    summary(d_cd6, robust=T)
+    saveRDS(d_cd6,"d_cd6.rds")
+    
+    
+    #Build a table with the primary results to report
+    lpm_table<-left_join(nat, sfe, by="rowname") %>% left_join(.,sdfe, by="rowname") %>% left_join(.,cfe,by="rowname") %>% left_join(.,cdfe, by="rowname")
+    colnames(lpm_table)<-c("Coeff", "National", "Nat p", "State FE","St p", "State-Decade FE", "St-D p", "County FE", "Cnty p", "County-Decade FE", "Cnty-D p")
+    lpm_table<-lpm_table %>% mutate_if(is.numeric,~formatC(.,format="e"))
+    tbl<-flextable::regulartable(lpm_table)
+    colkeys<-colnames(lpm_table)[-1]
+    tbl<-flextable::colformat_num(tbl, col_keys = colkeys,
+                                  big.mark = ",", digits = 5, format= "e",na_str = "NA")
+    print(tbl, preview="docx")
+    
+  
 
+ 
 #############################################
 ###Clean Individual Data for Regression###
 ############################################
@@ -328,7 +481,7 @@ dat<- dat_sf %>% st_drop_geometry(.) #same dataframe as above but without the ge
     mutate_at(., vars(USER_Price),~as.numeric(as.character(.))) %>%
     select(all_of(c(keep2,"geometry"))) 
   
-  #inflation adjust to 2019 dollars
+  #inflation adjust buyout price to 2019 dollars
   library(blscrapeR)
   df<-inflation_adjust(2019)
   head(df)
@@ -336,6 +489,13 @@ dat<- dat_sf %>% st_drop_geometry(.) #same dataframe as above but without the ge
   dat2_sf<-left_join(dat2_sf,df[,c(1,3)], by=c("USER_Fisca"="year"))
   dat2_sf$Value_adj<-dat2_sf$USER_Price/dat2_sf$adj_value
 
+  dat2_sf<-dat2_sf %>% mutate(pciyr = ifelse(`Data Measurement Year` != 2010, `Data Measurement Year`-1, 2012))
+  df2<-df[,c(1,3)] %>% rename(., adj_value2=adj_value)
+  dat2_sf_2<-left_join(dat2_sf,df2, by=c("pciyr"="year"))
+  dat2_sf_2$pci<-dat2_sf_2$pci/dat2_sf_2$adj_value2
+  
+  dat2_sf<-dat2_sf_2
+  
   dat2<- dat2_sf %>% st_drop_geometry(.) #same dataframe as above but without the geometries
   
   
@@ -364,7 +524,8 @@ dat<- dat_sf %>% st_drop_geometry(.) #same dataframe as above but without the ge
   nrow(df_comp %>% filter(`Data Measurement Year`==2000))
   nrow(df_comp %>% filter(`Data Measurement Year`==1990))
  
-  saveRDS(df_comp, "compdata0930.rds") #going with scaled/standardized data
+  # saveRDS(df_comp, "compdata020521.rds") #going with scaled/standardized data
+  # df_comp<-readRDS("compdata020521.rds")
   
   #Check distributions and correlations
   
@@ -667,155 +828,7 @@ dat<- dat_sf %>% st_drop_geometry(.) #same dataframe as above but without the ge
     
     
    
-#####################
-###BUYOUT DENSITY###
-####################
-    #can we say anything about where buyouts are more likely to be accepted? 
-    #Have more buyouts where you have more resources and more at risk homes so need to control for that. --> STATE FE and CNTY FE should help
-    #Dataset should only inlcude places that have had at least 1 buyout.
-    #Have controlled for population density so effects should account for fewer people and homes in the area.
-    
-# National models --> Only decade fixed effects
-    d_n1<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
-               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`), #controls
-             data=df_plm, na.action=na.omit) 
-      summary(d_n1, robust=T)
-      saveRDS(d_n1,"d_n1.rds")
-      car::vif(d_n1) #VIF all below 3
-      nat<- cbind (d_n1$coefficients, as.data.frame(d_n1$rpval))%>% rownames_to_column()#build a dataframe of results
-    
-    d_n2<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
-               pci + p_low_ed + bg_housing_density + factor(`Data Measurement Year`), #controls --> check housing instead of pop density
-             data=df_plm, na.action=na.omit) 
-      summary(d_n2, robust=T) #not significantly different from n1
-      saveRDS(d_n2,"d_n2.rds") 
-    
-    d_n3<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #basic demographic breakdown
-               p_home_own +  #homeownership
-               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`), #controls
-             data=df_plm, na.action=na.omit)
-    summary(d_n3, robust=T) 
-    car::vif(d_n3) #VIF all below 3
-    saveRDS(d_n3,"d_n3.rds") 
-    
-    d_n5<-felm(density ~ p_dependents + p_seniors +  #basic demographic breakdown
-               p_black_ho + p_other_ho + p_hisp_ho +  #homeownership demographics
-               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`), #controls
-             data=df_plm, na.action=na.omit)
-    summary(d_n5, robust=T) 
-    car::vif(d_n5) #all below 3
-    saveRDS(d_n5,"d_n5.rds")
-    
-    d_n6<-felm(density ~ p_dependents + p_seniors +  #basic demographic breakdown
-               p_black_rent + p_other_rent + p_hisp_rent +  #rentership demographics
-               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`), #controls
-             data=df_plm, na.action=na.omit)
-    summary(d_n6, robust=T) 
-    car::vif(d_n6) 
-    saveRDS(d_n6,"d_n6.rds")
-    
-#State Fixed Effects Models --> State and Decade fixed effects
-    d_s1<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
-               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`) | `State Code` , data=df_plm, na.action=na.omit)
-    summary(d_s1, robust=T) 
-    saveRDS(d_s1,"d_s1.rds")
-    sfe<- cbind (d_s1$coefficients, as.data.frame(d_s1$rpval))%>% rownames_to_column()
-    
-    d_s3<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #basic demographic breakdown
-               p_home_own +  #homeownership
-               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`)  | `State Code` , data=df_plm, na.action=na.omit)
-    summary(d_s3, robust=T)
-    saveRDS(d_s3,"d_s3.rds")
-    
-    d_s5<-felm(density ~ p_dependents + p_seniors +  #basic demographic breakdown
-               p_black_ho + p_other_ho + p_hisp_ho +  #homeownership demographics
-               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`)  | `State Code` , data=df_plm, na.action=na.omit)
-    summary(d_s5, robust=T) 
-    saveRDS(d_s5,"d_s5.rds")
-    
-    d_s6<-felm(density ~ p_dependents + p_seniors +  #basic demographic breakdown
-               p_black_rent + p_other_rent + p_hisp_rent +  #rentership demographics
-               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`) | `State Code` , data=df_plm, na.action=na.omit)
-    summary(d_s6, robust=T) 
-    saveRDS(d_s6,"d_s6.rds")
-    
-    
-  #State-Decade fixed effects
-    d_sd1<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
-                pci + p_low_ed + bg_pop_density | StateDecade, data=df_plm, na.action=na.omit)
-    summary(d_sd1, robust=T)
-    saveRDS(d_sd1,"sd1.rds")
-    sdfe<- cbind (d_sd1$coefficients, as.data.frame(d_sd1$rpval))%>% rownames_to_column()
-    
-    d_sd5<-felm(density ~ p_dependents + p_seniors +  #basic demographic breakdown
-                p_black_ho + p_other_ho + p_hisp_ho +  #homeownership demographics
-                pci + p_low_ed + bg_pop_density | StateDecade, data=df_plm, na.action=na.omit)
-    summary(d_sd5, robust=T)
-    saveRDS(d_sd5,"d_sd5.rds")
-    
-    d_sd6<-felm(density ~ p_dependents + p_seniors +  #basic demographic breakdown
-                p_black_rent + p_other_rent + p_hisp_rent +  #rentership demographics
-                pci + p_low_ed + bg_pop_density | StateDecade, data=df_plm, na.action=na.omit)
-    summary(d_sd6, robust=T)
-    saveRDS(d_sd6,"d_sd6.rds")
-    
-    
-#County Fixed Effects Models
-    d_c1<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
-               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`)| CNTY , data=df_plm, na.action=na.omit)
-    summary(d_c1, robust=T) 
-    saveRDS(d_c1,"d_c1.rds")
-    cfe<-cbind (d_c1$coefficients, as.data.frame(d_c1$rpval))%>% rownames_to_column()
-    
-    d_c3<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #basic demographic breakdown
-               p_home_own +  #homeownership
-               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`)  | CNTY , data=df_plm, na.action=na.omit)
-    summary(d_c3, robust=T)
-    saveRDS(d_c3,"d_c3.rds")
-    
-    d_c5<-felm(density ~ p_dependents + p_seniors +  #basic demographic breakdown
-               p_black_ho + p_other_ho + p_hisp_ho +  #homeownership demographics
-               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`)  | CNTY , data=df_plm, na.action=na.omit)
-    summary(d_c5, robust=T) 
-    saveRDS(d_c5,"d_c5.rds")
-    
-    d_c6<-felm(density ~ p_dependents + p_seniors +  #basic demographic breakdown
-               p_black_rent + p_other_rent + p_hisp_rent +  #rentership demographics
-               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`) | CNTY , data=df_plm, na.action=na.omit)
-    summary(d_c6, robust=T) 
-    saveRDS(d_c6,"d_c6.rds")
-    
-  #County-decade fixed effects
-    d_cd1<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
-                pci + p_low_ed + bg_pop_density | CntyDecade, data=df_plm, na.action=na.omit)
-    summary(d_cd1, robust=T)
-    saveRDS(d_cd1,"d_cd1.rds")
-    cdfe<- cbind (d_cd1$coefficients, as.data.frame(d_cd1$rpval))%>% rownames_to_column()
-    
-    d_cd5<-felm(density ~ p_dependents + p_seniors +  #basic demographic breakdown
-                p_black_ho + p_other_ho + p_hisp_ho +  #homeownership demographics
-                pci + p_low_ed + bg_pop_density | CntyDecade, data=df_plm, na.action=na.omit)
-    summary(d_cd5, robust=T)
-    saveRDS(d_cd5,"d_cd5.rds")
-    
-    d_cd6<-felm(density ~ p_dependents + p_seniors +  #basic demographic breakdown
-                p_black_rent + p_other_rent + p_hisp_rent +  #rentership demographics
-                pci + p_low_ed + bg_pop_density | CntyDecade, data=df_plm, na.action=na.omit)
-    summary(d_cd6, robust=T)
-    saveRDS(d_cd6,"d_cd6.rds")
-    
-    
-    #Build a table with the primary results to report
-    lpm_table<-left_join(nat, sfe, by="rowname") %>% left_join(.,sdfe, by="rowname") %>% left_join(.,cfe,by="rowname") %>% left_join(.,cdfe, by="rowname")
-    colnames(lpm_table)<-c("Coeff", "National", "Nat p", "State FE","St p", "State-Decade FE", "St-D p", "County FE", "Cnty p", "County-Decade FE", "Cnty-D p")
-    lpm_table<-lpm_table %>% mutate_if(is.numeric,~formatC(.,format="e"))
-    tbl<-flextable::regulartable(lpm_table)
-    colkeys<-colnames(lpm_table)[-1]
-    tbl<-flextable::colformat_num(tbl, col_keys = colkeys,
-                                  big.mark = ",", digits = 5, format= "e",na_str = "NA")
-    print(tbl, preview="docx")
-    
- 
+
 ######################################################
 ### Population, Homeowner, Renter Comparison Plots ### 
 ######################################################
@@ -875,7 +888,7 @@ dat<- dat_sf %>% st_drop_geometry(.) #same dataframe as above but without the ge
       labs(x = "Effect on Likelihood",
            y = "")+
       scale_color_brewer(palette="RdBu")
-    ggsave("home_rent_likelihood.jpeg", device="jpeg", width = 6, height = 4, units = "in")
+    ggsave("home_rent_likelihood_020521.jpeg", device="jpeg", width = 6, height = 4, units = "in")
   
   #For compensation models
     
@@ -939,7 +952,7 @@ dat<- dat_sf %>% st_drop_geometry(.) #same dataframe as above but without the ge
       labs(x = "Effect on Compensation (2019 $USD)",
            y = "")+
       scale_color_brewer(palette="RdBu")
-    ggsave("home_rent_compensation.jpeg", device="jpeg", width = 6, height = 4, units = "in")
+    ggsave("home_rent_compensation_020521.jpeg", device="jpeg", width = 6, height = 4, units = "in")
     
     
   # For density models
@@ -996,50 +1009,1394 @@ dat<- dat_sf %>% st_drop_geometry(.) #same dataframe as above but without the ge
       labs(x = "Effect on Buyout Density (count/sqkm)",
            y = "")+
       scale_color_brewer(palette="RdBu")
-    ggsave("home_rent_density.jpeg", device="jpeg", width = 6, height = 4, units = "in")
+    ggsave("home_rent_density_020521.jpeg", device="jpeg", width = 6, height = 4, units = "in")
     
     
 ###########################################
-### Time interaction model exploration ###
+### Time interaction models  ###
 ##########################################
     
-    df_plm$decade<-df_plm$`Data Measurement Year`
+    df_plm$decade<-as.factor(df_plm$`Data Measurement Year`)
     
-    # National models 
+#Buyout likelihood   
     nt1<-felm(buyout ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
-               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`), #controls
+               pci + p_low_ed + bg_pop_density , #controls
              data=df_plm, na.action=na.omit) 
     summary(nt1, robust=T)
     saveRDS(nt1,"nt1.rds")
+    nat<- cbind (nt1$coefficients, as.data.frame(nt1$rpval))%>% rownames_to_column()#build a dataframe of results
+    
+    
+    nt1<-felm(buyout ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                pci*decade + p_low_ed*decade + bg_pop_density*decade , #controls
+              data=df_plm, na.action=na.omit) 
+    summary(nt1, robust=T)
    
     st1<-felm(buyout ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
-               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`) | `State Code` , data=df_plm, na.action=na.omit)
+               pci + p_low_ed + bg_pop_density | `State Code` , data=df_plm, na.action=na.omit)
     summary(st1, robust=T) 
     saveRDS(st1,"st1.rds")
+    sfe<- cbind (st1$coefficients, as.data.frame(st1$rpval))%>% rownames_to_column()
+    
     
     ct1<-felm(buyout ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
-               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`)| CNTY , data=df_plm, na.action=na.omit)
+               pci + p_low_ed + bg_pop_density | CNTY , data=df_plm, na.action=na.omit)
     summary(ct1, robust=T) 
     saveRDS(ct1,"ct1.rds")
+    cfe<- cbind (ct1$coefficients, as.data.frame(ct1$rpval))%>% rownames_to_column()
+    
+    #Build a table with the primary results to report
+    lpm_table<-left_join(nat, sfe, by="rowname") %>% left_join(.,cfe,by="rowname")
+    colnames(lpm_table)<-c("Coeff", "National", "Nat p", "State FE","St p", "County FE","Cnty p")
+    lpm_table<-lpm_table %>% mutate_if(is.numeric,~formatC(.,format="e"))
+    tbl<-flextable::regulartable(lpm_table)
+    colkeys<-colnames(lpm_table)[-1]
+    tbl<-flextable::colformat_num(tbl, col_keys = colkeys,
+                                  big.mark = ",", digits = 5, na_str = "NA")
+    print(tbl, preview="docx")
+    
+#Buyout density
+    nt2<-felm(density ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                pci + p_low_ed + bg_pop_density , #controls
+              data=df_plm, na.action=na.omit) 
+    summary(nt2, robust=T)
+    saveRDS(nt2,"nt2.rds")
+    
+    st2<-felm(density ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                pci + p_low_ed + bg_pop_density  | `State Code` , data=df_plm, na.action=na.omit)
+    summary(st2, robust=T) 
+    saveRDS(st2,"st2.rds")
+    
+    ct2<-felm(density ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                pci + p_low_ed + bg_pop_density | CNTY , data=df_plm, na.action=na.omit)
+    summary(ct2, robust=T) 
+    saveRDS(ct2,"ct2.rds")
+  
+# Buyout compensation
+    df_comp$decade<-as.factor(df_comp$decade)
+    
+    nt3<-felm(Value_adj ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                pci + p_low_ed + bg_pop_density |USER_Struc , #controls
+              data=df_comp, na.action=na.omit) 
+    summary(nt3, robust=T)
+    saveRDS(nt3,"nt3.rds")
+    nat<- cbind (nt3$coefficients, as.data.frame(nt3$rpval))%>% rownames_to_column()#build a dataframe of results
+    
+    st3<-felm(Value_adj ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                pci + p_low_ed + bg_pop_density  | USER_Struc +`State Code` , data=df_comp, na.action=na.omit)
+    summary(st3, robust=T) 
+    saveRDS(st3,"st3.rds")
+    sfe<- cbind (st3$coefficients, as.data.frame(st3$rpval))%>% rownames_to_column()
+    
+    ct3<-felm(Value_adj ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                pci + p_low_ed + bg_pop_density | USER_Struc + CNTY , data=df_comp, na.action=na.omit)
+    summary(ct3, robust=T) 
+    saveRDS(ct3,"ct3.rds")
+    cfe<- cbind (ct3$coefficients, as.data.frame(ct3$rpval))%>% rownames_to_column()
+   
+    #Build a table with the primary results to report
+    lpm_table<-left_join(nat, sfe, by="rowname") %>% left_join(.,cfe,by="rowname")
+    colnames(lpm_table)<-c("Coeff", "National", "Nat p", "State FE","St p", "County FE","Cnty p")
+    lpm_table<-lpm_table %>% mutate_if(is.numeric,~formatC(.,format="e"))
+    tbl<-flextable::regulartable(lpm_table)
+    colkeys<-colnames(lpm_table)[-1]
+    tbl<-flextable::colformat_num(tbl, col_keys = colkeys,
+                                  big.mark = ",", digits = 5, na_str = "NA")
+    print(tbl, preview="docx")
+    
+#############################################
+### Models by urbanicity ###
+#############################################
+    
+    
+#Buyout likelihood models    
+    ndens1<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                pci + p_low_ed  + factor(`Data Measurement Year`), #controls
+              data=df_plm %>% filter(., p_rural >= 75), na.action=na.omit) 
+    summary(ndens1, robust=T)
+    saveRDS(ndens1,"ndens1.rds")
+    
+    
+    
+    ndens2<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed  + factor(`Data Measurement Year`), #controls
+                 data=df_plm %>% filter(., p_rural <= 25), na.action=na.omit) 
+    summary(ndens2, robust=T)
+    saveRDS(ndens2,"ndens2.rds")
+    
+    
+    
+    ndens3<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed  + factor(`Data Measurement Year`), #controls
+                 data=df_plm %>% filter(., p_urban >= 75), na.action=na.omit) 
+    summary(ndens3, robust=T)
+    saveRDS(ndens3,"ndens3.rds")
+    
+    
+    
+    ndens4<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed  + factor(`Data Measurement Year`), #controls
+                 data=df_plm %>% filter(., p_urban <= 25), na.action=na.omit) 
+    summary(ndens4, robust=T)
+    saveRDS(ndens4,"ndens4.rds")
+    
+    
+    
+    ndens5<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed  + factor(`Data Measurement Year`), #controls
+                 data=df_plm %>% filter(., p_urban_outside >= 75), na.action=na.omit) 
+    summary(ndens5, robust=T)
+    saveRDS(ndens5,"ndens5.rds")
     
    
- #######################################   
-        #inla logit model
+    
+    ndens6<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed  + factor(`Data Measurement Year`), #controls
+                 data=df_plm %>% filter(., p_urban_center >= 75), na.action=na.omit) 
+    summary(ndens6, robust=T)
+    saveRDS(ndens6,"ndens6.rds")
+    
+    
+    cdens3<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed  + factor(`Data Measurement Year`) | CNTY, #controls
+                 data=df_plm %>% filter(., p_urban >= 75), na.action=na.omit) 
+    summary(cdens3, robust=T)
+    saveRDS(cdens3,"cdens3.rds")
+    
+    
+    
+    cdens4<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed  + factor(`Data Measurement Year`) | CNTY, #controls
+                 data=df_plm %>% filter(., p_urban <= 25), na.action=na.omit) 
+    summary(cdens4, robust=T)
+    saveRDS(cdens4,"cdens4.rds")
+    
+    
+    
+    cdens5<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed  + factor(`Data Measurement Year`) | CNTY, #controls
+                 data=df_plm %>% filter(., p_urban_outside >= 75), na.action=na.omit) 
+    summary(cdens5, robust=T)
+    saveRDS(cdens5,"cdens5.rds")
+    
+    
+    
+    cdens6<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed  + factor(`Data Measurement Year`) | CNTY, #controls
+                 data=df_plm %>% filter(., p_urban_center >= 75), na.action=na.omit) 
+    summary(cdens6, robust=T)
+    saveRDS(cdens6,"cdens6.rds")
+    
+    
+#Buyout Density models
+    ndens7<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed  + factor(`Data Measurement Year`), #controls
+                 data=df_plm %>% filter(., p_urban >= 75), na.action=na.omit) 
+    summary(ndens7, robust=T)
+    saveRDS(ndens7,"ndens7.rds")
+    
+    
+    
+    ndens8<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed  + factor(`Data Measurement Year`), #controls
+                 data=df_plm %>% filter(., p_urban <= 25), na.action=na.omit) 
+    summary(ndens8, robust=T)
+    saveRDS(ndens8,"ndens8.rds")
+    
+    
+    
+    ndens9<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed  + factor(`Data Measurement Year`), #controls
+                 data=df_plm %>% filter(., p_urban_outside >= 75), na.action=na.omit) 
+    summary(ndens9, robust=T)
+    saveRDS(ndens9,"ndens9.rds")
+    
+    
+    
+    ndens10<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed  + factor(`Data Measurement Year`), #controls
+                 data=df_plm %>% filter(., p_urban_center >= 75), na.action=na.omit) 
+    summary(ndens10, robust=T)
+    saveRDS(ndens10,"ndens10.rds")
+    
+    
+    cdens7<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed  + factor(`Data Measurement Year`) | CNTY, #controls
+                 data=df_plm %>% filter(., p_urban >= 75), na.action=na.omit) 
+    summary(cdens7, robust=T)
+    saveRDS(cdens7,"cdens7.rds")
+    
+    
+    
+    cdens8<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed  + factor(`Data Measurement Year`) | CNTY, #controls
+                 data=df_plm %>% filter(., p_urban <= 25), na.action=na.omit) 
+    summary(cdens8, robust=T)
+    saveRDS(cdens8,"cdens8.rds")
+    
+    
+    
+    cdens9<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed  + factor(`Data Measurement Year`) | CNTY, #controls
+                 data=df_plm %>% filter(., p_urban_outside >= 75), na.action=na.omit) 
+    summary(cdens9, robust=T)
+    saveRDS(cdens9,"cdens9.rds")
+    
+    
+    
+    cdens10<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                    pci + p_low_ed  + factor(`Data Measurement Year`) | CNTY, #controls
+                  data=df_plm %>% filter(., p_urban_center >= 75), na.action=na.omit) 
+    summary(cdens10, robust=T)
+    saveRDS(cdens10,"cdens10.rds")
+    
+#Compensation models
+    ndens11<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed  + factor(`Data Measurement Year`) | USER_Struc, #controls
+                 data=df_comp %>% filter(., p_urban >= 75), na.action=na.omit) 
+    summary(ndens11, robust=T)
+    saveRDS(ndens11,"ndens11.rds")
+    
+    
+    
+    ndens12<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed  + factor(`Data Measurement Year`) | USER_Struc, #controls
+                 data=df_comp %>% filter(., p_urban <= 25), na.action=na.omit) 
+    summary(ndens12, robust=T)
+    saveRDS(ndens12,"ndens12.rds")
+    
+    
+    
+    ndens13<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed  + factor(`Data Measurement Year`) | USER_Struc, #controls
+                 data=df_comp %>% filter(., p_urban_outside >= 75), na.action=na.omit) 
+    summary(ndens13, robust=T)
+    saveRDS(ndens13,"ndens13.rds")
+    
+    
+    
+    ndens14<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                    pci + p_low_ed  + factor(`Data Measurement Year`) | USER_Struc, #controls
+                  data=df_comp %>% filter(., p_urban_center >= 75), na.action=na.omit) 
+    summary(ndens14, robust=T)
+    saveRDS(ndens14,"ndens14.rds") 
+    
+    cdens15<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                    pci + p_low_ed  + factor(`Data Measurement Year`)| USER_Struc + CNTY, #controls
+                  data=df_comp %>% filter(., p_urban_outside >= 75), na.action=na.omit) 
+    summary(cdens15, robust=T)
+    saveRDS(cdens15,"cdens15.rds")
+    
+    
+    cdens16<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                    pci + p_low_ed  + factor(`Data Measurement Year`)| USER_Struc + CNTY, #controls
+                  data=df_comp %>% filter(., p_urban_center >= 75), na.action=na.omit) 
+    summary(cdens16, robust=T)
+    saveRDS(cdens16,"cdens16.rds") 
+    
+    cdens17<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                    pci + p_low_ed  + factor(`Data Measurement Year`)| USER_Struc + CNTY, #controls
+                  data=df_comp %>% filter(., p_urban >= 75), na.action=na.omit) 
+    summary(cdens17, robust=T)
+    saveRDS(cdens17,"cdens17.rds")
+    
+    cdens18<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                    pci + p_low_ed  + factor(`Data Measurement Year`)| USER_Struc + CNTY, #controls
+                  data=df_comp %>% filter(., p_urban <= 25), na.action=na.omit) 
+    summary(cdens18, robust=T)
+    saveRDS(cdens18,"cdens18.rds")
+    
+    
+###################################################
+### Coefficient by Urbanicity Comparison Plots ### 
+##################################################
+    
+    
+    #For likelihood models (with county fe)
+    
+    d1<- cbind (cdens4$coefficients, as.data.frame(cdens4$rse)) %>% 
+      rownames_to_column() %>% mutate(model = "Non-Urban Block-Groups") %>%
+      setNames(., c("Variable","Effect","Standard Error","Model")) %>%
+      slice(1:5,7) %>% arrange(., Variable) #build a dataframe of results
+    
+    d2<- cbind (cdens5$coefficients, as.data.frame(cdens5$rse)) %>% 
+      rownames_to_column() %>% mutate(model = "Suburban Block-Groups") %>%
+      setNames(., c("Variable","Effect","Standard Error","Model")) %>%
+      slice(1:5,7) %>% arrange(., Variable) #build a dataframe of results
+    
+    d3<- cbind (cdens6$coefficients, as.data.frame(cdens6$rse)) %>% 
+      rownames_to_column() %>% mutate(model = "Urban Center") %>%
+      setNames(., c("Variable","Effect","Standard Error","Model")) %>%
+      slice(1:5,7) %>% arrange(., Variable)#build a dataframe of results
+    
+   
+    
+    urbanicity <- bind_rows(d1,d2,d3) %>% 
+      mutate_at(.,vars(Variable),~str_replace(.,"_ho","")) %>% 
+      mutate_at(.,vars(Variable),~str_replace(.,"_rent","")) %>%
+      mutate_at(.,vars(Variable),~str_replace(.,"p_","")) %>%
+      mutate_at(.,vars(Variable),~str_replace(.,"black","Black")) %>%
+      mutate_at(.,vars(Variable),~str_replace(.,"hisp","Hispanic/Latinx")) %>%
+      mutate_at(.,vars(Variable),~str_replace(.,"other","Other Race")) %>%
+      mutate_at(.,vars(Variable),~str_replace(.,"low_ed","Low Education")) %>%
+      mutate_at(.,vars(Variable),~str_replace(.,"seniors","Seniors")) %>%
+      mutate_at(.,vars(Variable),~str_replace(.,"dependents","Dependents"))
+    
+    library(RColorBrewer)
+    my.cols <- brewer.pal(4, "RdBu")
+    
+    ggplot(urbanicity) +
+      geom_errorbarh(height = 0, aes(xmin = Effect - `Standard Error`, 
+                                     xmax = Effect + `Standard Error`, 
+                                     y = reorder(Variable, desc(Effect)),
+                                     color= Model, group=Variable)) +
+      geom_point(aes(x = Effect, y = reorder(Variable, desc(Effect)), color=Model), size = 2) +
+      geom_vline(xintercept = 0) +
+      theme_minimal()+
+      labs(x = "Effect on Likelihood",
+           y = "")+
+      scale_color_manual(values= my.cols[1:3])
+    ggsave("urbanicity_likelihood_020521.jpeg", device="jpeg", width = 6, height = 4, units = "in")
+    
+    #For compensation models
+    
+    d1<- cbind (cdens18$coefficients, as.data.frame(cdens18$rse)) %>% 
+      rownames_to_column() %>% mutate(model = "Non-Urban Block-Groups") %>%
+      setNames(., c("Variable","Effect","Standard Error","Model")) %>%
+      slice(1:5,7) %>% arrange(., Variable) #build a dataframe of results
+    
+    d2<- cbind (cdens15$coefficients, as.data.frame(cdens15$rse)) %>% 
+      rownames_to_column() %>% mutate(model = "Suburban Block-Groups") %>%
+      setNames(., c("Variable","Effect","Standard Error","Model")) %>%
+      slice(1:5,7) %>% arrange(., Variable) #build a dataframe of results
+    
+    d3<- cbind (cdens16$coefficients, as.data.frame(cdens16$rse)) %>% 
+      rownames_to_column() %>% mutate(model = "Urban Center") %>%
+      setNames(., c("Variable","Effect","Standard Error","Model")) %>%
+      slice(1:5,7) %>% arrange(., Variable)#build a dataframe of results
+    
+    
+    
+    urbanicity <- bind_rows(d1,d2,d3) %>% 
+      mutate_at(.,vars(Variable),~str_replace(.,"_ho","")) %>% 
+      mutate_at(.,vars(Variable),~str_replace(.,"_rent","")) %>%
+      mutate_at(.,vars(Variable),~str_replace(.,"p_","")) %>%
+      mutate_at(.,vars(Variable),~str_replace(.,"black","Black")) %>%
+      mutate_at(.,vars(Variable),~str_replace(.,"hisp","Hispanic/Latinx")) %>%
+      mutate_at(.,vars(Variable),~str_replace(.,"other","Other Race")) %>%
+      mutate_at(.,vars(Variable),~str_replace(.,"low_ed","Low Education")) %>%
+      mutate_at(.,vars(Variable),~str_replace(.,"seniors","Seniors")) %>%
+      mutate_at(.,vars(Variable),~str_replace(.,"dependents","Dependents"))
+    
+    library(RColorBrewer)
+    my.cols <- brewer.pal(4, "RdBu")
+    
+    ggplot(urbanicity) +
+      geom_errorbarh(height = 0, aes(xmin = Effect - `Standard Error`, 
+                                     xmax = Effect + `Standard Error`, 
+                                     y = reorder(Variable, desc(Effect)),
+                                     color= Model, group=Variable)) +
+      geom_point(aes(x = Effect, y = reorder(Variable, desc(Effect)), color=Model), size = 2) +
+      geom_vline(xintercept = 0) +
+      theme_minimal()+
+      labs(x = "Effect on Compensation (2019 $USD)",
+           y = "")+
+      scale_color_manual(values= my.cols[1:3])
+    ggsave("urbanicity_compensation_020521.jpeg", device="jpeg", width = 6, height = 4, units = "in")
+    
+    
+    
+    # For density models
+    
+    d1<- cbind (cdens8$coefficients, as.data.frame(cdens8$rse)) %>% 
+      rownames_to_column() %>% mutate(model = "Non-Urban Block-Groups") %>%
+      setNames(., c("Variable","Effect","Standard Error","Model")) %>%
+      slice(1:5,7) %>% arrange(., Variable) #build a dataframe of results
+    
+    d2<- cbind (cdens9$coefficients, as.data.frame(cdens9$rse)) %>% 
+      rownames_to_column() %>% mutate(model = "Suburban Block-Groups") %>%
+      setNames(., c("Variable","Effect","Standard Error","Model")) %>%
+      slice(1:5,7) %>% arrange(., Variable) #build a dataframe of results
+    
+    d3<- cbind (cdens10$coefficients, as.data.frame(cdens10$rse)) %>% 
+      rownames_to_column() %>% mutate(model = "Urban Center") %>%
+      setNames(., c("Variable","Effect","Standard Error","Model")) %>%
+      slice(1:5,7) %>% arrange(., Variable)#build a dataframe of results
+    
+    
+    
+    urbanicity <- bind_rows(d1,d2,d3) %>% 
+      mutate_at(.,vars(Variable),~str_replace(.,"_ho","")) %>% 
+      mutate_at(.,vars(Variable),~str_replace(.,"_rent","")) %>%
+      mutate_at(.,vars(Variable),~str_replace(.,"p_","")) %>%
+      mutate_at(.,vars(Variable),~str_replace(.,"black","Black")) %>%
+      mutate_at(.,vars(Variable),~str_replace(.,"hisp","Hispanic/Latinx")) %>%
+      mutate_at(.,vars(Variable),~str_replace(.,"other","Other Race")) %>%
+      mutate_at(.,vars(Variable),~str_replace(.,"low_ed","Low Education")) %>%
+      mutate_at(.,vars(Variable),~str_replace(.,"seniors","Seniors")) %>%
+      mutate_at(.,vars(Variable),~str_replace(.,"dependents","Dependents"))
+    
+    library(RColorBrewer)
+    my.cols <- brewer.pal(4, "RdBu")
+    
+    ggplot(urbanicity) +
+      geom_errorbarh(height = 0, aes(xmin = Effect - `Standard Error`, 
+                                     xmax = Effect + `Standard Error`, 
+                                     y = reorder(Variable, desc(Effect)),
+                                     color= Model, group=Variable)) +
+      geom_point(aes(x = Effect, y = reorder(Variable, desc(Effect)), color=Model), size = 2) +
+      geom_vline(xintercept = 0) +
+      theme_minimal()+
+      labs(x = "Effect on Buyout Density (count/sqkm)",
+           y = "")+
+      scale_color_manual(values= my.cols[1:3])
+    ggsave("urbanicity_density_020521.jpeg", device="jpeg", width = 6, height = 4, units = "in")
+    
+    
+    
+#########################################
+### Models by urban density  AND Time###
+########################################
+    
+    
+    #Buyout likelihood models    
+    
+    
+    ntdens3<-felm(buyout ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                   pci + p_low_ed  , #controls
+                 data=df_plm %>% filter(., p_urban >= 75), na.action=na.omit) 
+    summary(ntdens3, robust=T)
+    saveRDS(ntdens3,"ntdens3.rds")
+    
+    
+    
+    ntdens4<-felm(buyout ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                   pci + p_low_ed  , #controls
+                 data=df_plm %>% filter(., p_urban <= 25), na.action=na.omit) 
+    summary(ntdens4, robust=T)
+    saveRDS(ntdens4,"ntdens4.rds")
+    
+    
+    
+    ntdens5<-felm(buyout ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                   pci + p_low_ed , #controls
+                 data=df_plm %>% filter(., p_urban_outside >= 75), na.action=na.omit) 
+    summary(ntdens5, robust=T)
+    saveRDS(ntdens5,"ntdens5.rds")
+    
+    
+    
+    ntdens6<-felm(buyout ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                   pci + p_low_ed  , #controls
+                 data=df_plm %>% filter(., p_urban_center >= 75), na.action=na.omit) 
+    summary(ntdens6, robust=T)
+    saveRDS(ntdens6,"ntdens6.rds")
+    
+    
+    ctdens3<-felm(buyout ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                   pci + p_low_ed   | CNTY, #controls
+                 data=df_plm %>% filter(., p_urban >= 75), na.action=na.omit) 
+    summary(ctdens3, robust=T)
+    saveRDS(ctdens3,"ctdens3.rds")
+    
+    df_plm$decade<-as.factor(df_plm$decade)
+    
+    ctdens4<-felm(buyout ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                   pci + p_low_ed   | CNTY, #controls
+                 data=df_plm %>% dplyr::filter(., p_urban <= 25), na.action=na.omit) 
+    summary(ctdens4, robust=T)
+    saveRDS(ctdens4,"ctdens4.rds")
+    
+    
+    
+    ctdens5<-felm(buyout ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                   pci + p_low_ed   | CNTY, #controls
+                 data=df_plm %>% filter(., p_urban_outside >= 75), na.action=na.omit) 
+    summary(ctdens5, robust=T)
+    saveRDS(ctdens5,"ctdens5.rds")
+    
+    
+    
+    ctdens6<-felm(buyout ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                   pci + p_low_ed   | CNTY, #controls
+                 data=df_plm %>% filter(., p_urban_center >= 75), na.action=na.omit) 
+    summary(ctdens6, robust=T)
+    saveRDS(ctdens6,"ctdens6.rds")
+    
 
-    # library(INLA)
+    
+    #Buyout Density models
+    ntdens7<-felm(density ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                   pci + p_low_ed  , #controls
+                 data=df_plm %>% filter(., p_urban >= 75), na.action=na.omit) 
+    summary(ntdens7, robust=T)
+    saveRDS(ntdens7,"ntdens7.rds")
+    
+    
+    
+    ntdens8<-felm(density ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                   pci + p_low_ed  , #controls
+                 data=df_plm %>% filter(., p_urban <= 25), na.action=na.omit) 
+    summary(ntdens8, robust=T)
+    saveRDS(ntdens8,"ntdens8.rds")
+    
+    
+    
+    ntdens9<-felm(density ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                   pci + p_low_ed  , #controls
+                 data=df_plm %>% filter(., p_urban_outside >= 75), na.action=na.omit) 
+    summary(ntdens9, robust=T)
+    saveRDS(ntdens9,"ntdens9.rds")
+    
+    
+    
+    ntdens10<-felm(density ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                    pci + p_low_ed  , #controls
+                  data=df_plm %>% filter(., p_urban_center >= 75), na.action=na.omit) 
+    summary(ntdens10, robust=T)
+    saveRDS(ntdens10,"ntdens10.rds")
+    
+    
+    ctdens7<-felm(density ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                   pci + p_low_ed   | CNTY, #controls
+                 data=df_plm %>% filter(., p_urban >= 75), na.action=na.omit) 
+    summary(ctdens7, robust=T)
+    saveRDS(ctdens7,"ctdens7.rds")
+    
+    
+    
+    ctdens8<-felm(density ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                   pci + p_low_ed  | CNTY, #controls
+                 data=df_plm %>% filter(., p_urban <= 25), na.action=na.omit) 
+    summary(ctdens8, robust=T)
+    saveRDS(ctdens8,"ctdens8.rds")
+    
+    
+    
+    ctdens9<-felm(density ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                   pci + p_low_ed   | CNTY, #controls
+                 data=df_plm %>% filter(., p_urban_outside >= 75), na.action=na.omit) 
+    summary(ctdens9, robust=T)
+    saveRDS(ctdens9,"ctdens9.rds")
+    
+    
+    
+    ctdens10<-felm(density ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                    pci + p_low_ed  | CNTY, #controls
+                  data=df_plm %>% filter(., p_urban_center >= 75), na.action=na.omit) 
+    summary(ctdens10, robust=T)
+    saveRDS(ctdens10,"ctdens10.rds")
+    
+    #Compensation models
+    ntdens11<-felm(Value_adj ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                    pci + p_low_ed   | USER_Struc, #controls
+                  data=df_comp %>% filter(., p_urban >= 75), na.action=na.omit) 
+    summary(ntdens11, robust=T)
+    saveRDS(ntdens11,"ntdens11.rds")
+    
+    
+    
+    ntdens12<-felm(Value_adj ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                    pci + p_low_ed   | USER_Struc, #controls
+                  data=df_comp %>% filter(., p_urban <= 25), na.action=na.omit) 
+    summary(ntdens12, robust=T)
+    saveRDS(ntdens12,"ntdens12.rds")
+    
+    
+    
+    ntdens13<-felm(Value_adj ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                    pci + p_low_ed   | USER_Struc, #controls
+                  data=df_comp %>% filter(., p_urban_outside >= 75), na.action=na.omit) 
+    summary(ntdens13, robust=T)
+    saveRDS(ntdens13,"ntdens13.rds")
+    
+    
+    
+    ntdens14<-felm(Value_adj ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                    pci + p_low_ed   | USER_Struc, #controls
+                  data=df_comp %>% filter(., p_urban_center >= 75), na.action=na.omit) 
+    summary(ntdens14, robust=T)
+    saveRDS(ntdens14,"ntdens14.rds") 
+    
+    ctdens15<-felm(Value_adj ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                    pci + p_low_ed  | USER_Struc + CNTY, #controls
+                  data=df_comp %>% filter(., p_urban_outside >= 75), na.action=na.omit) 
+    summary(ctdens15, robust=T)
+    saveRDS(ctdens15,"ctdens15.rds")
+    
+    
+    ctdens16<-felm(Value_adj ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                    pci + p_low_ed  | USER_Struc + CNTY, #controls
+                  data=df_comp %>% filter(., p_urban_center >= 75), na.action=na.omit) 
+    summary(ctdens16, robust=T)
+    saveRDS(ctdens16,"ctdens16.rds") 
+    
+    ctdens17<-felm(Value_adj ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                    pci + p_low_ed  | USER_Struc + CNTY, #controls
+                  data=df_comp %>% filter(., p_urban >= 75), na.action=na.omit) 
+    summary(ctdens17, robust=T)
+    saveRDS(ctdens17,"ctdens17.rds")
+    
+    ctdens18<-felm(Value_adj ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                    pci + p_low_ed  | USER_Struc + CNTY, #controls
+                  data=df_comp %>% filter(., p_urban <= 25), na.action=na.omit) 
+    summary(ctdens18, robust=T)
+    saveRDS(ctdens18,"ctdens18.rds")
+    
+    
+#############################################
+### Cross-sectional urban density  models ###
+#############################################
+    
+    
+    #Buyout likelihood models    
+    csndens1<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed , #controls
+                 data=df_plm %>% filter(., p_urban >= 75 & decade == '1990'), na.action=na.omit) 
+    summary(csndens1, robust=T)
+    saveRDS(csndens1,"csndens1.rds")
+    
+    csndens2<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                     pci + p_low_ed , #controls
+                   data=df_plm %>% filter(., p_urban >= 75 & decade == '2000'), na.action=na.omit) 
+    summary(csndens2, robust=T)
+    saveRDS(csndens2,"csndens2.rds")
+    
+    csndens3<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                     pci + p_low_ed , #controls
+                   data=df_plm %>% filter(., p_urban >= 75 & decade == '2010'), na.action=na.omit) 
+    summary(csndens3, robust=T)
+    saveRDS(csndens3,"csndens3.rds")
+    
+    
+    
+    cscdens1a<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed   | CNTY, #controls
+                 data=df_plm %>% filter(., p_urban >= 75 & decade == '1990'), na.action=na.omit) 
+    summary(cscdens1a, robust=T)
+    saveRDS(cscdens1a,"cscdens1a.rds")
+    
+    cscdens1b<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed   | CNTY, #controls
+                    data=df_plm %>% filter(., p_urban >= 75 & decade == '2000'), na.action=na.omit) 
+    summary(cscdens1b, robust=T)
+    saveRDS(cscdens1b,"cscdens1b.rds")
+    
+    cscdens1c<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed   | CNTY, #controls
+                    data=df_plm %>% filter(., p_urban >= 75 & decade == '2010'), na.action=na.omit) 
+    summary(cscdens1c, robust=T)
+    saveRDS(cscdens1c,"cscdens1c.rds")
+    
+    
+    cscdens2a<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed   | CNTY, #controls
+                 data=df_plm %>% filter(., p_urban <= 25 & decade == '1990'), na.action=na.omit) 
+    summary(cscdens2a, robust=T)
+    saveRDS(cscdens2a,"cscdens2a.rds")
+    
+    cscdens2b<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed   | CNTY, #controls
+                    data=df_plm %>% filter(., p_urban <= 25 & decade == '2000'), na.action=na.omit) 
+    summary(cscdens2b, robust=T)
+    saveRDS(cscdens2b,"cscdens2b.rds")
+    
+    cscdens2c<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed   | CNTY, #controls
+                    data=df_plm %>% filter(., p_urban <= 25 & decade == '2010'), na.action=na.omit) 
+    summary(cscdens2c, robust=T)
+    saveRDS(cscdens2c,"cscdens2c.rds")
+    
+    cscdens3a<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed  | CNTY, #controls
+                 data=df_plm %>% filter(., p_urban_outside >= 75 & decade == '1990'), na.action=na.omit) 
+    summary(cscdens3a, robust=T)
+    saveRDS(cscdens3a,"cscdens3a.rds")
+    
+    cscdens3b<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed  | CNTY, #controls
+                    data=df_plm %>% filter(., p_urban_outside >= 75 & decade == '2000'), na.action=na.omit) 
+    summary(cscdens3b, robust=T)
+    saveRDS(cscdens3b,"cscdens3b.rds")
+    
+    cscdens3c<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed  | CNTY, #controls
+                    data=df_plm %>% filter(., p_urban_outside >= 75 & decade == '2010'), na.action=na.omit) 
+    summary(cscdens3c, robust=T)
+    saveRDS(cscdens3c,"cscdens3c.rds")
+    
+    cscdens4a<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed  | CNTY, #controls
+                 data=df_plm %>% filter(., p_urban_center >= 75 & decade == '1990'), na.action=na.omit) 
+    summary(cscdens4a, robust=T)
+    saveRDS(cscdens4a,"cscdens4a.rds")
+    
+    cscdens4b<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed  | CNTY, #controls
+                    data=df_plm %>% filter(., p_urban_center >= 75 & decade == '2000'), na.action=na.omit) 
+    summary(cscdens4b, robust=T)
+    saveRDS(cscdens4b,"cscdens4b.rds")
+    
+    cscdens4c<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed  | CNTY, #controls
+                    data=df_plm %>% filter(., p_urban_center >= 75 & decade == '2010'), na.action=na.omit) 
+    summary(cscdens4c, robust=T)
+    saveRDS(cscdens4c,"cscdens4c.rds")
+    
+    
+    #Buyout Density models
+    cscdens5a<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed   |  CNTY, #controls
+                    data=df_plm %>% filter(., p_urban >= 75 & decade == '1990'), na.action=na.omit) 
+    summary(cscdens5a, robust=T)
+    saveRDS(cscdens5a,"cscdens5a.rds")
+    
+    cscdens5b<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed   |  CNTY, #controls
+                    data=df_plm %>% filter(., p_urban >= 75 & decade == '2000'), na.action=na.omit) 
+    summary(cscdens5b, robust=T)
+    saveRDS(cscdens5b,"cscdens5b.rds")
+    
+    cscdens5c<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed   |  CNTY, #controls
+                    data=df_plm %>% filter(., p_urban >= 75 & decade == '2010'), na.action=na.omit) 
+    summary(cscdens5c, robust=T)
+    saveRDS(cscdens5c,"cscdens5c.rds")
+    
+    
+    cscdens6a<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed   |  CNTY, #controls
+                    data=df_plm %>% filter(., p_urban <= 25 & decade == '1990'), na.action=na.omit) 
+    summary(cscdens6a, robust=T)
+    saveRDS(cscdens6a,"cscdens6a.rds")
+    
+    cscdens6b<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed   |  CNTY, #controls
+                    data=df_plm %>% filter(., p_urban <= 25 & decade == '2000'), na.action=na.omit) 
+    summary(cscdens6b, robust=T)
+    saveRDS(cscdens6b,"cscdens6b.rds")
+    
+    cscdens6c<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed   |  CNTY, #controls
+                    data=df_plm %>% filter(., p_urban <= 25 & decade == '2010'), na.action=na.omit) 
+    summary(cscdens6c, robust=T)
+    saveRDS(cscdens6c,"cscdens6c.rds")
+    
+    cscdens7a<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed  |  CNTY, #controls
+                    data=df_plm %>% filter(., p_urban_outside >= 75 & decade == '1990'), na.action=na.omit) 
+    summary(cscdens7a, robust=T)
+    saveRDS(cscdens7a,"cscdens7a.rds")
+    
+    cscdens7b<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed  |  CNTY, #controls
+                    data=df_plm %>% filter(., p_urban_outside >= 75 & decade == '2000'), na.action=na.omit) 
+    summary(cscdens7b, robust=T)
+    saveRDS(cscdens7b,"cscdens7b.rds")
+    
+    cscdens7c<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed  |  CNTY, #controls
+                    data=df_plm %>% filter(., p_urban_outside >= 75 & decade == '2010'), na.action=na.omit) 
+    summary(cscdens7c, robust=T)
+    saveRDS(cscdens7c,"cscdens7c.rds")
+    
+    cscdens8a<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed  |  CNTY, #controls
+                    data=df_plm %>% filter(., p_urban_center >= 75 & decade == '1990'), na.action=na.omit) 
+    summary(cscdens8a, robust=T)
+    saveRDS(cscdens8a,"cscdens8a.rds")
+    
+    cscdens8b<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed  |  CNTY, #controls
+                    data=df_plm %>% filter(., p_urban_center >= 75 & decade == '2000'), na.action=na.omit) 
+    summary(cscdens8b, robust=T)
+    saveRDS(cscdens8b,"cscdens8b.rds")
+    
+    cscdens8c<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed  |  CNTY, #controls
+                    data=df_plm %>% filter(., p_urban_center >= 75 & decade == '2010'), na.action=na.omit) 
+    summary(cscdens8c, robust=T)
+    saveRDS(cscdens8c,"cscdens8c.rds")
+    
+    #Compensation models
+    cscdens9a<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed   | USER_Struc + CNTY, #controls
+                    data=df_comp %>% filter(., p_urban >= 75 & decade == '1990'), na.action=na.omit) 
+    summary(cscdens9a, robust=T)
+    saveRDS(cscdens9a,"cscdens9a.rds")
+    
+    cscdens9b<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed   | USER_Struc + CNTY, #controls
+                    data=df_comp %>% filter(., p_urban >= 75 & decade == '2000'), na.action=na.omit) 
+    summary(cscdens9b, robust=T)
+    saveRDS(cscdens9b,"cscdens9b.rds")
+    
+    cscdens9c<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed   | USER_Struc + CNTY, #controls
+                    data=df_comp %>% filter(., p_urban >= 75 & decade == '2010'), na.action=na.omit) 
+    summary(cscdens9c, robust=T)
+    saveRDS(cscdens9c,"cscdens9c.rds")
+    
+    
+    cscdens10a<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed   | USER_Struc + CNTY, #controls
+                    data=df_comp %>% filter(., p_urban <= 25 & decade == '1990'), na.action=na.omit) 
+    summary(cscdens10a, robust=T)
+    saveRDS(cscdens10a,"cscdens10a.rds")
+    
+    cscdens10b<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed   | USER_Struc + CNTY, #controls
+                    data=df_comp %>% filter(., p_urban <= 25 & decade == '2000'), na.action=na.omit) 
+    summary(cscdens10b, robust=T)
+    saveRDS(cscdens10b,"cscdens10b.rds")
+    
+    cscdens10c<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed   | USER_Struc + CNTY, #controls
+                    data=df_comp %>% filter(., p_urban <= 25 & decade == '2010'), na.action=na.omit) 
+    summary(cscdens10c, robust=T)
+    saveRDS(cscdens10c,"cscdens10c.rds")
+    
+    cscdens11a<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed  | USER_Struc + CNTY, #controls
+                    data=df_comp %>% filter(., p_urban_outside >= 75 & decade == '1990'), na.action=na.omit) 
+    summary(cscdens11a, robust=T)
+    saveRDS(cscdens11a,"cscdens11a.rds")
+    
+    cscdens11b<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed  | USER_Struc + CNTY, #controls
+                    data=df_comp %>% filter(., p_urban_outside >= 75 & decade == '2000'), na.action=na.omit) 
+    summary(cscdens11b, robust=T)
+    saveRDS(cscdens11b,"cscdens11b.rds")
+    
+    cscdens11c<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed  | USER_Struc + CNTY, #controls
+                    data=df_comp %>% filter(., p_urban_outside >= 75 & decade == '2010'), na.action=na.omit) 
+    summary(cscdens11c, robust=T)
+    saveRDS(cscdens11c,"cscdens11c.rds")
+    
+    cscdens12a<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed  | USER_Struc + CNTY, #controls
+                    data=df_comp %>% filter(., p_urban_center >= 75 & decade == '1990'), na.action=na.omit) 
+    summary(cscdens12a, robust=T)
+    saveRDS(cscdens12a,"cscdens12a.rds")
+    
+    cscdens12b<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed  | USER_Struc + CNTY, #controls
+                    data=df_comp %>% filter(., p_urban_center >= 75 & decade == '2000'), na.action=na.omit) 
+    summary(cscdens12b, robust=T)
+    saveRDS(cscdens12b,"cscdens12b.rds")
+    
+    cscdens12c<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                      pci + p_low_ed  | USER_Struc + CNTY, #controls
+                    data=df_comp %>% filter(., p_urban_center >= 75 & decade == '2010'), na.action=na.omit) 
+    summary(cscdens12c, robust=T)
+    saveRDS(cscdens12c,"cscdens12c.rds")
+    
+    
+#############################################
+###Clean Community Data for Regression###
+############################################
+    
+    
+    keep<-c("GISJOIN","GIS Join Match Code" ,"Geography Year" ,"Data Measurement Year" ,"State Name", "State Code","County Name",
+            "County Code","p_dependents","p_seniors" ,"p_working" , "p_white" , "p_black","p_other",  "p_hisp",
+            "p_rural", "p_urban" , "p_urban_center" ,"p_urban_outside" , "p_home_own" , "p_rent","p_white_ho" , "p_white_rent" ,"p_black_ho",
+            "p_black_rent" ,"p_other_ho", "p_other_rent" , "p_hisp_ho","p_hisp_rent","cnty_pop_density" , "cnty_housing_density", "p_foreign", 
+            "p_low_ed", "p_high_ed", "pci", "AvePrice" , "count", "density", "buyout", "StateDecade","CNTY")
+    
+    dat3_sf<-community %>% 
+      rename_all(~str_replace_all(.,"\\.","_")) %>%  #the periods in the original dataframe cause headaches later on so replace with underscores
+      mutate(density = count/Shape_area * 1e-6) %>% #add a buyout density per block group variable (count per sq km)
+      mutate(buyout = ifelse(count >=1, 1,0)) %>% #add a buyout binary indicator for each block group
+      mutate(StateDecade = paste0(`State Code`,"_", `Data Measurement Year`)) %>% #create State-decade fixed effect identifiers
+      mutate(CNTY = paste0(`State Code`,`County Code`)) %>% #create unique County fixed effect identifiers
+      select(all_of(c(keep,"geometry"))) 
+    
+    dat3<- dat3_sf %>% st_drop_geometry(.) #same dataframe as above but without the geometries
+    
+    
+    p_vars<-c("p_dependents","p_seniors" ,"p_working" , "p_white" , "p_black","p_other",  "p_hisp",
+              "p_rural", "p_urban" , "p_urban_center" ,"p_urban_outside" , "p_home_own" , "p_rent",
+              "p_white_ho" , "p_white_rent" ,"p_black_ho","p_black_rent" ,"p_other_ho", "p_other_rent" , 
+              "p_hisp_ho","p_hisp_rent", "p_foreign", "p_low_ed", "p_high_ed") #percent value variables
+    
+    t_vars <-c("p_dependents","p_seniors" ,"p_working" , "p_black","p_other",  "p_hisp",
+               "p_black_ho", "p_black_rent" ,"p_other_ho", "p_other_rent" , "p_hisp_ho","p_hisp_rent",
+               "cnty_pop_density" , "cnty_housing_density", "p_foreign", 
+               "p_low_ed", "p_high_ed", "pci", "AvePrice") #indep vars for transformation
+    
+    #t_vars<-c()
+    
+    #Possible transformations
+    
+    # df_plm<-dat %>% 
+    #   filter_at(tidyselect::all_of(p_vars), any_vars(.< 101)) %>% #get rid of outliers from poor data quality and incomplete records (no percent vars greater than 100%)
+    #   mutate_at(vars(all_of(t_vars)), ~log(. + invoke(min,na_if(.,0),na.rm=TRUE))) %>% #log transform to reduce skew, add small value so that measured values of zero don't become -Inf
+    #   mutate_if(is.numeric,~ifelse(abs(.) == Inf,NA,.))#remove produced infinite values
     # 
-    # df_plm$decade<-df_plm$`Data Measurement Year`
-    # formula<- density ~  p_dependents  + p_other + p_black +  p_hisp + #only basic demographic breakdown
-    #   pci + p_low_ed + bg_pop_density 
+    # df_plm<-dat %>% 
+    #   filter_at(tidyselect::all_of(p_vars), any_vars(.< 101)) %>% #get rid of outliers from poor data quality and incomplete records (no percent vars greater than 100%)
+    #   mutate_at(vars(all_of(t_vars)), ~log(. + 1)) %>% #log transform to reduce skew, add small value so that measured values of zero don't become -Inf
+    #   mutate_if(is.numeric,~ifelse(abs(.) == Inf,NA,.))#remove produced infinite values
     # 
-    # OUT<-inla(formula, data=df_plm, family = "gaussian", verbose=T,control.inla = list(int.strategy = "eb")) #run the inla model --> fails to converge
-    # #saveRDS(OUT, file=paste0(wd,"/inla_logit.rds")) #save the model
+    # df_plm<-dat %>% 
+    #   filter_at(tidyselect::all_of(p_vars), any_vars(.< 101)) %>% #get rid of outliers from poor data quality and incomplete records (no percent vars greater than 100%)
+    #   mutate_at(vars(all_of(t_vars)), ~log(.)) %>% #log transform to reduce skew
+    #   mutate_if(is.numeric,~ifelse(abs(.) == Inf,NA,.))#remove produced infinite values
+    
+    df_plm_cnty<-dat3 %>% 
+      filter_at(tidyselect::all_of(p_vars), any_vars(.< 101)) %>% #get rid of outliers from poor data quality and incomplete records (no percent vars greater than 100%)
+      mutate_at(vars(all_of(t_vars)), ~scale(.)) %>% #standardize data
+      mutate_if(is.numeric,~ifelse(abs(.) == Inf,NA,.))#remove produced infinite values
+    
+    #Check for consistency and accuracy
+    nrow(df_plm_cnty %>% filter(`Data Measurement Year`==2010))
+    nrow(df_plm_cnty %>% filter(`Data Measurement Year`==2000))
+    nrow(df_plm_cnty %>% filter(`Data Measurement Year`==1990))
+    
+    nrow(df_plm_cnty %>% filter(`Data Measurement Year`==2010 & buyout ==1))
+    nrow(df_plm_cnty %>% filter(`Data Measurement Year`==2000 & buyout ==1))
+    nrow(df_plm_cnty %>% filter(`Data Measurement Year`==1990 & buyout ==1))
+    
+    
+    # saveRDS(df_plm_cnty, "plm_cnty_data020521.rds") #going with scaled/standardized data
+    # df_plm_cnty<-readRDS("plm_cnty_data020521.rds")
+    
+    #Check distributions and correlations
+    
+    n_vars<-c("p_dependents","p_seniors" ,"p_working" , "p_white" , "p_black","p_other",  "p_hisp",
+              "p_rural", "p_urban" , "p_urban_center" ,"p_urban_outside" , "p_home_own" , "p_rent","p_white_ho" , "p_white_rent" ,"p_black_ho",
+              "p_black_rent" ,"p_other_ho", "p_other_rent" , "p_hisp_ho","p_hisp_rent","cnty_pop_density" , "cnty_housing_density", "p_foreign", 
+              "p_low_ed", "p_high_ed", "pci", "AvePrice" , "count", "density") #numeric vars
+    
+    ggplot(data=melt(df_plm_cnty %>% select(all_of(n_vars)))) +
+      stat_density(aes(x=value))+
+      facet_wrap(~variable, scales="free")
+    
+    C<-cor(df_plm_cnty %>% select(all_of(c(n_vars, "Data Measurement Year"))), use="complete.obs")
+    corrplot::corrplot(C)
+    
+###############################################
+###BUYOUT LIKELIHOOD (Communities) Models###
+##############################################
+    
+    # These are linear probability models (LPM) at a county (community) scale 
+    # Evaluates the likelihood of at least one buyout occurring in a county (results in percentage points) as a function of the independent variables
+    # As the indep vars used are standardized interpret beta as a 1 standard deviation increase in X leads to a beta*100 percentage point increase in Y, where Y is the likelihood of receiving a buyout.
+    
+    # National models --> Only decade fixed effects
+    n1cnty<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed + cnty_pop_density + factor(`Data Measurement Year`), #controls
+                 data=df_plm_cnty, na.action=na.omit) 
+    summary(n1cnty, robust=T)
+    saveRDS(n1cnty,"n1cnty.rds")
+    car::vif(n1cnty) #VIF all below 3
+    nat<- cbind (n1cnty$coefficients, as.data.frame(n1cnty$rpval))%>% rownames_to_column()#build a dataframe of results
+    
+    n2cnty<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed + cnty_housing_density + factor(`Data Measurement Year`), #controls --> check housing instead of pop density
+                 data=df_plm_cnty, na.action=na.omit) 
+    summary(n2cnty, robust=T) #not significantly different from n1
+    saveRDS(n2cnty,"n2cnty.rds") 
+    
+    n3cnty<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #basic demographic breakdown
+                   p_home_own +  #homeownership
+                   pci + p_low_ed + cnty_pop_density + factor(`Data Measurement Year`), #controls
+                 data=df_plm_cnty, na.action=na.omit)
+    summary(n3cnty, robust=T) 
+    car::vif(n3cnty) #VIF all below 3cnty
+    saveRDS(n3cnty,"n3cnty.rds") 
+    
+    n4cnty<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #basic demographic breakdown
+                   p_black_ho + p_other_ho + p_hisp_ho +  #homeownership demographics
+                   pci + p_low_ed + cnty_pop_density + factor(`Data Measurement Year`), #controls
+                 data=df_plm_cnty, na.action=na.omit)
+    summary(n4cnty, robust=T) 
+    car::vif(n4cnty) #high VIF values --> drop this model formulation due to collinearity of demographics and homeownership demographics
+    
+    n5cnty<-felm(buyout ~ p_dependents + p_seniors +  #basic demographic breakdown
+                   p_black_ho + p_other_ho + p_hisp_ho +  #homeownership demographics
+                   pci + p_low_ed + cnty_pop_density + factor(`Data Measurement Year`), #controls
+                 data=df_plm_cnty, na.action=na.omit)
+    summary(n5cnty, robust=T) 
+    car::vif(n5cnty) #all below 3cnty
+    saveRDS(n5cnty,"n5cnty.rds")
+    
+    n6cnty<-felm(buyout ~ p_dependents + p_seniors +  #basic demographic breakdown
+                   p_black_rent + p_other_rent + p_hisp_rent +  #rentership demographics
+                   pci + p_low_ed + cnty_pop_density + factor(`Data Measurement Year`), #controls
+                 data=df_plm_cnty, na.action=na.omit)
+    summary(n6cnty, robust=T) 
+    car::vif(n6cnty) 
+    saveRDS(n6cnty,"n6cnty.rds")
+    
+    n7cnty<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + cnty_pop_density + factor(`Data Measurement Year`), #remove education control
+                 data=df_plm_cnty, na.action=na.omit) 
+    summary(n7cnty, robust=T)
+    saveRDS(n7cnty,"n7cnty.rds")
+    
+    n8cnty<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   p_low_ed + cnty_pop_density + factor(`Data Measurement Year`), #remove pci control
+                 data=df_plm_cnty, na.action=na.omit) 
+    summary(n8cnty, robust=T)
+    saveRDS(n8cnty,"n8cnty.rds")
+    
+    n9cnty<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed + factor(`Data Measurement Year`), #remove population density
+                 data=df_plm_cnty, na.action=na.omit) 
+    summary(n9cnty, robust=T)
+    saveRDS(n9cnty,"n9cnty.rds")
+    
+    n10cnty<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                    pci + p_low_ed + cnty_pop_density, #remove temporal control
+                  data=df_plm_cnty, na.action=na.omit) 
+    summary(n10cnty, robust=T)
+    saveRDS(n10cnty,"n10cnty.rds")
+    
+    #State Fixed Effects Models --> State and Decade fixed effects
+    s1cnty<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed + cnty_pop_density + factor(`Data Measurement Year`) | `State Code` , data=df_plm_cnty, na.action=na.omit)
+    summary(s1cnty, robust=T) 
+    saveRDS(s1cnty,"s1cnty.rds")
+    sfe<- cbind (s1cnty$coefficients, as.data.frame(s1cnty$rpval))%>% rownames_to_column()
+    
+    s2cnty<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed + cnty_housing_density + factor(`Data Measurement Year`) | `State Code` , data=df_plm_cnty, na.action=na.omit)
+    summary(s2cnty, robust=T) 
+    saveRDS(s2cnty,"s2cnty.rds")
+    
+    s3cnty<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #basic demographic breakdown
+                   p_home_own +  #homeownership
+                   pci + p_low_ed + cnty_pop_density + factor(`Data Measurement Year`)  | `State Code` , data=df_plm_cnty, na.action=na.omit)
+    summary(s3cnty, robust=T)
+    saveRDS(s3cnty,"s3cnty.rds")
+    
+    s5cnty<-felm(buyout ~ p_dependents + p_seniors +  #basic demographic breakdown
+                   p_black_ho + p_other_ho + p_hisp_ho +  #homeownership demographics
+                   pci + p_low_ed + cnty_pop_density + factor(`Data Measurement Year`)  | `State Code` , data=df_plm_cnty, na.action=na.omit)
+    summary(s5cnty, robust=T) 
+    saveRDS(s5cnty,"s5cnty.rds")
+    
+    s6cnty<-felm(buyout ~ p_dependents + p_seniors +  #basic demographic breakdown
+                   p_black_rent + p_other_rent + p_hisp_rent +  #rentership demographics
+                   pci + p_low_ed + cnty_pop_density + factor(`Data Measurement Year`) | `State Code` , data=df_plm_cnty, na.action=na.omit)
+    summary(s6cnty, robust=T) 
+    saveRDS(s6cnty,"s6cnty.rds")
+    
+    s10cnty<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                    pci + p_low_ed + cnty_pop_density | `State Code` , data=df_plm_cnty, na.action=na.omit) #remove temporal control
+    summary(s10cnty, robust=T)
+    saveRDS(s10cnty,"s10cnty.rds")
+    
+    #State-Decade fixed effects
+    sd1cnty<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                    pci + p_low_ed + cnty_pop_density | StateDecade, data=df_plm_cnty, na.action=na.omit)
+    summary(sd1cnty, robust=T)
+    saveRDS(sd1cnty,"sd1cnty.rds")
+    sdfe<- cbind (sd1cnty$coefficients, as.data.frame(sd1cnty$rpval))%>% rownames_to_column()
+    
+    sd5cnty<-felm(buyout ~ p_dependents + p_seniors +  #basic demographic breakdown
+                    p_black_ho + p_other_ho + p_hisp_ho +  #homeownership demographics
+                    pci + p_low_ed + cnty_pop_density | StateDecade, data=df_plm_cnty, na.action=na.omit)
+    summary(sd5cnty, robust=T)
+    saveRDS(sd5cnty,"sd5cnty.rds")
+    
+    sd6cnty<-felm(buyout ~ p_dependents + p_seniors +  #basic demographic breakdown
+                    p_black_rent + p_other_rent + p_hisp_rent +  #rentership demographics
+                    pci + p_low_ed + cnty_pop_density | StateDecade, data=df_plm_cnty, na.action=na.omit)
+    summary(sd6cnty, robust=T)
+    saveRDS(sd6cnty,"sd6cnty.rds")
+    
+    #Build a table with the primary results to report
+    lpm_table<-left_join(nat, sfe, by="rowname") %>% left_join(.,sdfe, by="rowname") 
+    colnames(lpm_table)<-c("Coeff", "National", "Nat p", "State FE","St p", "State-Decade FE", "St-D p")
+    lpm_table<-lpm_table %>% mutate_if(is.numeric,~formatC(.,format="e"))
+    tbl<-flextable::regulartable(lpm_table)
+    colkeys<-colnames(lpm_table)[-1]
+    tbl<-flextable::colformat_num(tbl, col_keys = colkeys,
+                                  big.mark = ",", digits = 5, na_str = "NA")
+    print(tbl, preview="docx")
+    
+##########################################################
+###Community BUYOUT LIKELIHOOD Time Interaction Models###
+#######################################################
+    
+    # These are linear probability models (LPM) at a county (community) scale 
+    # Evaluates the likelihood of at least one buyout occurring in a county (results in percentage points) as a function of the independent variables
+    # As the indep vars used are standardized interpret beta as a 1 standard deviation increase in X leads to a beta*100 percentage point increase in Y, where Y is the likelihood of receiving a buyout.
+    
+    df_plm_cnty$decade<-as.factor(df_plm_cnty$`Data Measurement Year`)
+    # National models --> Only decade fixed effects
+    n1cnty_ti<-felm(buyout ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                   pci + p_low_ed + cnty_pop_density , #controls
+                 data=df_plm_cnty, na.action=na.omit) 
+    summary(n1cnty_ti, robust=T)
+    saveRDS(n1cnty_ti,"n1cnty_ti.rds")
+    car::vif(n1cnty_ti) #VIF all below 3
+    nat<- cbind (n1cnty_ti$coefficients, as.data.frame(n1cnty_ti$rpval))%>% rownames_to_column()#build a dataframe of results
+    
+   
+    
+    #State Fixed Effects Models --> State and Decade fixed effects
+    s1cnty_ti<-felm(buyout ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                   pci + p_low_ed + cnty_pop_density  | `State Code` , data=df_plm_cnty, na.action=na.omit)
+    summary(s1cnty_ti, robust=T) 
+    saveRDS(s1cnty_ti,"s1cnty_ti.rds")
+    sfe<- cbind (s1cnty_ti$coefficients, as.data.frame(s1cnty_ti$rpval))%>% rownames_to_column()
     
     
     
-    formula<- density ~ 1 + f(CNTY,model="iid") + f(decade, model="iid")
+    
+    #Build a table with the primary results to report
+    lpm_table<-left_join(nat, sfe, by="rowname")
+    colnames(lpm_table)<-c("Coeff", "National", "Nat p", "State FE","St p")
+    lpm_table<-lpm_table %>% mutate_if(is.numeric,~formatC(.,format="e"))
+    tbl<-flextable::regulartable(lpm_table)
+    colkeys<-colnames(lpm_table)[-1]
+    tbl<-flextable::colformat_num(tbl, col_keys = colkeys,
+                                  big.mark = ",", digits = 5, na_str = "NA")
+    print(tbl, preview="docx")
+    
+    
+    
+############################################
+### Models with only new buyout subset ###
+##########################################
+    
+    # These models use the subset of blockgroups where buyouts have not occurred in prior decades to control for the potential effect of 
+    # buyout in a prior time period leading to reduced popoulations and reduced likelihood of future buyouts.
+    
+    # These models are not significantly different from the original models --> we can rule out trend of decreasing buyout likelihood 
+    # for minority, and particularly Black, populations being due to prior decade buyouts moving these populations out of buyout neighborhoods 
+    # and hence changing the composition of these neighborhoods and reducing the likelihood of future buyouts or reducing the density of future buyouts.
+    # Therefore, reduction of likelihood or density for specific populations is not likely to be due to prior buyouts removing them from
+    # high-risk buyout neighborhoods.
+    
+###BUYOUT LIKELIHOOD 
+    
+    ##Subset the data##
+    
+    #create list of blockgroups where buyouts occurred in prior decades
+    locs90 <- df_plm %>% filter(`Data Measurement Year` == '1990' & buyout == 1) %>% select (GISJOIN) 
+    locs00 <- df_plm %>% filter((`Data Measurement Year` == '1990' | `Data Measurement Year` == '2000') & buyout == 1) %>% select (GISJOIN)
+    
+    #remove locations where a buyout has previously occurred
+    df_plm_new90 <- df_plm %>% filter(`Data Measurement Year` == '1990') 
+    df_plm_new00 <- df_plm %>% filter(`Data Measurement Year` == '2000' & !(GISJOIN %in% locs90$GISJOIN))
+    df_plm_new10 <- df_plm %>% filter(`Data Measurement Year` == '2010' & !(GISJOIN %in% locs00$GISJOIN))
+    
+    df_plm_new<-rbind(df_plm_new90,df_plm_new00,df_plm_new10)
+    
+    # National models --> Only decade fixed effects
+    n1_new<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`), #controls
+             data=df_plm_new, na.action=na.omit) 
+    summary(n1_new, robust=T)
+    saveRDS(n1_new,"n1_new.rds")
+    car::vif(n1) #VIF all below 3
+    # nat<- cbind (n1$coefficients, as.data.frame(n1$rpval))%>% rownames_to_column()#build a dataframe of results
+    
+   
+    
+    #State Fixed Effects Models --> State and Decade fixed effects
+    s1_new<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`) | `State Code` , data=df_plm_new, na.action=na.omit)
+    summary(s1_new, robust=T) 
+    saveRDS(s1_new,"s1_new.rds")
+    # sfe<- cbind (s1$coefficients, as.data.frame(s1$rpval))%>% rownames_to_column()
+    # 
+    
+    
+    #State-Decade fixed effects
+    sd1_new<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                pci + p_low_ed + bg_pop_density | StateDecade, data=df_plm_new, na.action=na.omit)
+    summary(sd1_new, robust=T)
+    saveRDS(sd1_new,"sd1_new.rds")
+    # sdfe<- cbind (sd1$coefficients, as.data.frame(sd1$rpval))%>% rownames_to_column()
+    
+    #County Fixed Effects Models
+    c1_new<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+               pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`)| CNTY , data=df_plm_new, na.action=na.omit)
+    summary(c1_new, robust=T) 
+    saveRDS(c1_new,"c1_new.rds")
+    # cfe<-cbind (c1$coefficients, as.data.frame(c1$rpval))%>% rownames_to_column()
+    
+    
+    #County-decade fixed effects
+    cd1_new<-felm(buyout ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                pci + p_low_ed + bg_pop_density | CntyDecade, data=df_plm_new, na.action=na.omit)
+    summary(cd1_new, robust=T)
+    saveRDS(cd1_new,"cd1_new.rds")
+    # cdfe<- cbind (cd1$coefficients, as.data.frame(cd1$rpval))%>% rownames_to_column()
 
-    OUT<-inla(formula, data=df_plm, family = "gaussian", verbose=T) #run the inla model --> fails to converge
-    #saveRDS(OUT, file=paste0(wd,"/inla_logit.rds")) #save the model
     
+    df_plm_new$decade<-as.factor(df_plm_new$`Data Measurement Year`)
+    
+#Buyout likelihood  time interactions
+    nt1_new<-felm(buyout ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                pci + p_low_ed + bg_pop_density , #controls
+              data=df_plm_new, na.action=na.omit) 
+    summary(nt1_new, robust=T)
+    saveRDS(nt1_new,"nt1_new.rds")
+    # nat<- cbind (nt1_new$coefficients, as.data.frame(nt1_new$rpval))%>% rownames_to_column()#build a dataframe of results
+    
+
+    st1_new<-felm(buyout ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                pci + p_low_ed + bg_pop_density | `State Code` , data=df_plm_new, na.action=na.omit)
+    summary(st1_new, robust=T) 
+    saveRDS(st1_new,"st1_new.rds")
+    # sfe<- cbind (st1_new$coefficients, as.data.frame(st1_new$rpval))%>% rownames_to_column()
+    
+    
+    ct1_new<-felm(buyout ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                pci + p_low_ed + bg_pop_density | CNTY , data=df_plm_new, na.action=na.omit)
+    summary(ct1_new, robust=T) 
+    saveRDS(ct1_new,"ct1_new.rds")
+    # cfe<- cbind (ct1_new$coefficients, as.data.frame(ct1_new$rpval))%>% rownames_to_column()
+    
+    
+###BUYOUT DENSITY
+    
+    # National models --> Only decade fixed effects
+    d_n1_new<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                 pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`), #controls
+               data=df_plm_new, na.action=na.omit) 
+    summary(d_n1_new, robust=T)
+    saveRDS(d_n1_new,"d_n1_new.rds")
+    # car::vif(d_n1_new) #VIF all below 3
+    # nat<- cbind (d_n1_new$coefficients, as.data.frame(d_n1_new$rpval))%>% rownames_to_column()#build a dataframe of results
+    # 
+   
+    #State Fixed Effects Models --> State and Decade fixed effects
+    d_s1_new<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                 pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`) | `State Code` , data=df_plm_new, na.action=na.omit)
+    summary(d_s1_new, robust=T) 
+    saveRDS(d_s1_new,"d_s1_new.rds")
+    # sfe<- cbind (d_s1_new$coefficients, as.data.frame(d_s1_new$rpval))%>% rownames_to_column()
+    
+   
+    #State-Decade fixed effects
+    d_sd1_new<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                  pci + p_low_ed + bg_pop_density | StateDecade, data=df_plm_new, na.action=na.omit)
+    summary(d_sd1_new, robust=T)
+    saveRDS(d_sd1_new,"sd1_new.rds")
+    # sdfe<- cbind (d_sd1_new$coefficients, as.data.frame(d_sd1_new$rpval))%>% rownames_to_column()
+    
+   
+    #County Fixed Effects Models
+    d_c1_new<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                 pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`)| CNTY , data=df_plm_new, na.action=na.omit)
+    summary(d_c1_new, robust=T) 
+    saveRDS(d_c1_new,"d_c1_new.rds")
+    # cfe<-cbind (d_c1_new$coefficients, as.data.frame(d_c1_new$rpval))%>% rownames_to_column()
+    
+    
+    #County-decade fixed effects
+    d_cd1_new<-felm(density ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                  pci + p_low_ed + bg_pop_density | CntyDecade, data=df_plm_new, na.action=na.omit)
+    summary(d_cd1_new, robust=T)
+    saveRDS(d_cd1_new,"d_cd1_new.rds")
+    # cdfe<- cbind (d_cd1_new$coefficients, as.data.frame(d_cd1_new$rpval))%>% rownames_to_column()
+    
+#Buyout density time interaction
+    nt2_new<-felm(density ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                pci + p_low_ed + bg_pop_density , #controls
+              data=df_plm_new, na.action=na.omit) 
+    summary(nt2_new, robust=T)
+    saveRDS(nt2_new,"nt2_new.rds")
+    
+    st2_new<-felm(density ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                pci + p_low_ed + bg_pop_density  | `State Code` , data=df_plm_new, na.action=na.omit)
+    summary(st2_new, robust=T) 
+    saveRDS(st2_new,"st2_new.rds")
+    
+    ct2_new<-felm(density ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                pci + p_low_ed + bg_pop_density | CNTY , data=df_plm_new, na.action=na.omit)
+    summary(ct2_new, robust=T) 
+    saveRDS(ct2_new,"ct2_new.rds") 
+    
+###BUYOUT Compensation 
+    
+   ## Subset the data ##
+    
+    #create list of blockgroups where buyouts occurred in prior decades
+    locs90 <- df_comp %>% filter(`Data Measurement Year` == '1990') %>% select (GISJOIN) 
+    locs00 <- df_comp %>% filter((`Data Measurement Year` == '1990' | `Data Measurement Year` == '2000') ) %>% select (GISJOIN)
+    
+    #remove locations where a buyout has previously occurred
+    df_comp_new90 <- df_comp %>% filter(`Data Measurement Year` == '1990') 
+    df_comp_new00 <- df_comp %>% filter(`Data Measurement Year` == '2000' & !(GISJOIN %in% locs90$GISJOIN))
+    df_comp_new10 <- df_comp %>% filter(`Data Measurement Year` == '2010' & !(GISJOIN %in% locs00$GISJOIN))
+    
+    df_comp_new<-rbind(df_comp_new90,df_comp_new00,df_comp_new10) 
+    
+    #National Model --> Time and structure type fixed effects
+    nb1_new <-felm(Value_adj ~  p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`)| USER_Struc, data=df_comp_new) #controls
+    summary(nb1_new, robust=T)
+    saveRDS(nb1_new,"nb1_new.rds")
+    # getfe(nb1)
+    # nat<- cbind (nb1$coefficients, as.data.frame(nb1$rpval))%>% rownames_to_column()
+    # 
+   
+    #Models with State FE
+    
+    nb_s1_new<-felm(Value_adj ~  p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                  pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`) | USER_Struc + `State Code`, data=df_comp_new)
+    summary(nb_s1_new, robust=T)
+    saveRDS(nb_s1_new,"nb_s1_new.rds")
+    # sfe<- cbind (nb_s1$coefficients, as.data.frame(nb_s1$rpval)) %>% rownames_to_column()
+    
+    
+    
+    #State-Decade fixed effects
+    
+    nb_sd1_new<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed + bg_pop_density | USER_Struc + StateDecade, data=df_comp_new)
+    summary(nb_sd1_new, robust=T)
+    saveRDS(nb_sd1_new,"nb_sd1_new.rds")
+    # sdfe<- cbind (nb_sd1_new$coefficients, as.data.frame(nb_sd1_new$rpval))%>% rownames_to_column()
+    
+    
+    
+    #County FE Models
+    
+    nb_c1_new<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                  pci + p_low_ed + bg_pop_density + factor(`Data Measurement Year`)| USER_Struc + CNTY, data=df_comp_new)
+    summary(nb_c1_new, robust=T) 
+    saveRDS(nb_c1_new,"nb_c1_new.rds")
+    # cfe<-cbind (nb_c1_new$coefficients, as.data.frame(nb_c1_new$rpval))%>% rownames_to_column()
+    
+   
+    
+    #County-decade fixed effects
+    
+    nb_cd1_new<-felm(Value_adj ~ p_dependents + p_seniors + p_other + p_black +  p_hisp + #only basic demographic breakdown
+                   pci + p_low_ed + bg_pop_density | USER_Struc + CntyDecade, data=df_comp_new) 
+    summary(nb_cd1_new, robust=T)
+    saveRDS(nb_cd1_new,"nb_cd1_new.rds")
+    # cdfe<- cbind (nb_cd1_new$coefficients, as.data.frame(nb_cd1_new$rpval))%>% rownames_to_column()
+    
+# Buyout compensation
+    df_comp_new$decade<-as.factor(df_comp_new$decade)
+    
+    nt3_new<-felm(Value_adj ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                pci + p_low_ed + bg_pop_density |USER_Struc , #controls
+              data=df_comp_new, na.action=na.omit) 
+    summary(nt3_new, robust=T)
+    saveRDS(nt3_new,"nt3_new.rds")
+    # nat<- cbind (nt3_new$coefficients, as.data.frame(nt3_new$rpval))%>% rownames_to_column()#build a dataframe of results
+    
+    st3_new<-felm(Value_adj ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                pci + p_low_ed + bg_pop_density  | USER_Struc +`State Code` , data=df_comp_new, na.action=na.omit)
+    summary(st3_new, robust=T) 
+    saveRDS(st3_new,"st3_new.rds")
+    # sfe<- cbind (st3_new$coefficients, as.data.frame(st3_new$rpval))%>% rownames_to_column()
+    
+    ct3_new<-felm(Value_adj ~ p_dependents + p_seniors + p_other*decade + p_black*decade +  p_hisp*decade + #only basic demographic breakdown
+                pci + p_low_ed + bg_pop_density | USER_Struc + CNTY , data=df_comp_new, na.action=na.omit)
+    summary(ct3_new, robust=T) 
+    saveRDS(ct3_new,"ct3_new.rds")
+    # cfe<- cbind (ct3_new$coefficients, as.data.frame(ct3_new$rpval))%>% rownames_to_column()
     

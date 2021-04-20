@@ -18,6 +18,24 @@ community <- readRDS(paste0(wd,"/data/community_with_bo_summary_0922.rds"))
 
 neighborhood <- readRDS(paste0(wd,"/data/neighborhood_with_bo_summary_0930.rds"))
 
+#inflation adjust pci to 2019 dollars
+library(blscrapeR)
+df<-inflation_adjust(2019)
+head(df)
+df$year<-as.numeric(df$year)
+community<-community %>% mutate(pciyr = ifelse(`Data Measurement Year` != 2010, `Data Measurement Year`-1, 2012))
+community_2<-left_join(community,df[,c(1,3)], by=c("pciyr"="year"))
+community_2$pci<-community_2$pci/community_2$adj_value
+
+neighborhood<-neighborhood %>% mutate(pciyr = ifelse(`Data Measurement Year` != 2010, `Data Measurement Year`-1, 2012))
+neighborhood_2<-left_join(neighborhood,df[,c(1,3)], by=c("pciyr"="year"))
+neighborhood_2$pci<-neighborhood_2$pci/neighborhood_2$adj_value
+
+community<-community_2
+neighborhood<-neighborhood_2
+
+# saveRDS(community, paste0(wd,"/data/community_with_bo_summary_020521.rds"))
+# saveRDS(neighborhood, paste0(wd,"/data/neighborhood_with_bo_summary_020521.rds"))
 ###########################################################################
 ### Calculate Summary Stats at Different Scales using Neighborhood Data ###
 ###########################################################################
@@ -50,18 +68,18 @@ dat<-neighborhood %>% st_drop_geometry(.) %>%
   ##NATIONAL AVERAGE of Neighborhood Stats by decade
   
     national<-purrr::map_df(dat, ~ summarise_at(.,vars(all_of(aggregate)), funs(mean=mean, sd=sd, min=min, max=max), na.rm=T)) 
-    saveRDS(national, "national.rds") #produces a dataframe with national averages of all census stats across block groups and decades
+    # saveRDS(national, "national.rds") #produces a dataframe with national averages of all census stats across block groups and decades
     
     nationalbo<-purrr::map_df(dat, ~filter(.,count > 0) %>% 
                                  summarise_at(.,vars(all_of(aggregate)), mean, na.rm=T)) %>% 
                                   set_rownames(c("1990","2000","2010")) 
-    saveRDS(nationalbo, "nationalbo.rds") 
+    # saveRDS(nationalbo, "nationalbo.rds") 
     
     
     nationalnobo<-purrr::map_df(dat, ~filter(.,count == 0) %>% 
                                    summarise_at(.,vars(all_of(aggregate)), mean, na.rm=T)) %>% 
                                    set_rownames(c("1990","2000","2010"))
-    saveRDS(nationalnobo, "nationalnobo.rds")
+    # saveRDS(nationalnobo, "nationalnobo.rds")
     
     
     nat_ratio<- nationalbo/nationalnobo #within the nation, the propensity for buyout block group characteristics to vary from non-buyout block groups
@@ -240,7 +258,7 @@ dat2<-community %>% st_drop_geometry(.) %>%
     write.csv(bg_cnty_ratio_w, file = "bgcntyratio.csv")
     
         nrow(bg_cnty_ratio_w %>% filter(.,(`Data Measurement Year`==1990 & p_white_rent > 1)))/nrow(bg_cnty_ratio_w %>% filter(.,`Data Measurement Year`==1990)) #for pulling average stats for paper
-        nrow(bg_cnty_ratio_w %>% filter(.,(`Data Measurement Year`==2000 & p_hisp_rent > 1)))/nrow(bg_cnty_ratio_w %>% filter(.,`Data Measurement Year`==2000)) #for pulling average stats for paper
+        nrow(bg_cnty_ratio_w %>% filter(.,(`Data Measurement Year`==2000 & p_hisp_ho > 1)))/nrow(bg_cnty_ratio_w %>% filter(.,`Data Measurement Year`==2000)) #for pulling average stats for paper
         nrow(bg_cnty_ratio_w %>% filter(.,(`Data Measurement Year`==2010 & p_white_rent > 1)))/nrow(bg_cnty_ratio_w %>% filter(.,`Data Measurement Year`==2010)) #for pulling average stats for paper
         
     
@@ -303,7 +321,7 @@ dat2<-community %>% st_drop_geometry(.) %>%
                                    ncol=2, nrow=1,
                                    common.legend = TRUE, legend = "bottom")
         figure1
-        ggsave("neigh_community_pop_pci_0930.jpeg", device="jpeg", width = 6, height = 3, units = "in")
+        ggsave("neigh_community_pop_pci_020521.jpeg", device="jpeg", width = 6, height = 3, units = "in")
         
         ed<- ggplot(bg_cnty_ratio_w %>% select(p_low_ed, `Data Measurement Year`) %>% mutate(Decade = as.character(`Data Measurement Year`))) + 
           geom_density(aes(x=p_low_ed, color=NULL, group = Decade, fill=Decade, alpha=0.9, stat(count)), trim=TRUE, bw=0.1, adjust=2) +
@@ -491,7 +509,7 @@ dat2<-community %>% st_drop_geometry(.) %>%
                                          ncol=2, nrow=1,
                                          common.legend = TRUE, legend = "bottom")
               figure1
-              ggsave("community_nation_pop_pci_0930.jpeg", device="jpeg", width = 6, height = 3, units = "in")
+              ggsave("community_nation_pop_pci_020521.jpeg", device="jpeg", width = 6, height = 3, units = "in")
           
           ed<- ggplot(cnty_n_ratio_w %>% select(p_low_ed, `Data Measurement Year`) %>% mutate(Decade = as.character(`Data Measurement Year`))) + 
             geom_density(aes(x=p_low_ed, color=NULL, group = Decade, fill=Decade, alpha=0.9, stat(count)), trim=TRUE, bw=0.1) +
@@ -590,7 +608,7 @@ dat2<-community %>% st_drop_geometry(.) %>%
 #############################################################
 
 # This set of calculations uses the county (community) scale data extracted from IPUMS
-# (tests to confirm that there is no fallacy in comparing the average community of neighborhoods instead of the census community values)
+# (tests to confirm that there is no fallacy in comparing the average of community  neighborhoods instead of the census community values)
 
 
               
@@ -611,9 +629,9 @@ dat2<-community %>% st_drop_geometry(.) %>%
     cnty_n_ratio_w2<-cnty_n_ratio2[,c("GISJOIN","Data Measurement Year", "ratio","var")] %>% spread(var,ratio)
     write.csv(cnty_n_ratio_w2, file = "cntynratio2.csv")
     
-       nrow(cnty_n_ratio_w2 %>% filter(.,(`Data Measurement Year`==1990 & p_black_ho > 1)))/nrow(cnty_n_ratio_w2 %>% filter(.,`Data Measurement Year`==1990)) #for pulling average stats for paper
-       nrow(cnty_n_ratio_w2 %>% filter(.,(`Data Measurement Year`==2000 & p_black_ho > 1)))/nrow(cnty_n_ratio_w2 %>% filter(.,`Data Measurement Year`==2000)) #for pulling average stats for paper
-       nrow(cnty_n_ratio_w2 %>% filter(.,(`Data Measurement Year`==2010 & p_black_ho > 1)))/nrow(cnty_n_ratio_w2 %>% filter(.,`Data Measurement Year`==2010)) #for pulling average stats for paper
+       nrow(cnty_n_ratio_w2 %>% filter(.,(`Data Measurement Year`==1990 & pci > 1)))/nrow(cnty_n_ratio_w2 %>% filter(.,`Data Measurement Year`==1990)) #for pulling average stats for paper
+       nrow(cnty_n_ratio_w2 %>% filter(.,(`Data Measurement Year`==2000 & pci > 1)))/nrow(cnty_n_ratio_w2 %>% filter(.,`Data Measurement Year`==2000)) #for pulling average stats for paper
+       nrow(cnty_n_ratio_w2 %>% filter(.,(`Data Measurement Year`==2010 & pci > 1)))/nrow(cnty_n_ratio_w2 %>% filter(.,`Data Measurement Year`==2010)) #for pulling average stats for paper
        
         ### Build Plots ###
         
@@ -652,7 +670,7 @@ dat2<-community %>% st_drop_geometry(.) %>%
                                    hl + theme( axis.title.y = element_blank()),
                                    ncol=2,nrow=2, common.legend = TRUE, legend = "bottom")
         figure1
-        ggsave("community_nation_demo_0922_b.jpeg", device="jpeg", width = 6, height = 6, units = "in")
+        ggsave("community_nation_demo_020521_b.jpeg", device="jpeg", width = 6, height = 6, units = "in")
         
         
         pci<- ggplot(cnty_n_ratio_w2 %>% select(pci, `Data Measurement Year`) %>% mutate(Decade = as.character(`Data Measurement Year`))) + 
@@ -674,7 +692,7 @@ dat2<-community %>% st_drop_geometry(.) %>%
                                    ncol=2, nrow=1,
                                    common.legend = TRUE, legend = "bottom")
         figure1
-        ggsave("community_nation_pop_pci_0922_b.jpeg", device="jpeg", width = 6, height = 3, units = "in")
+        ggsave("community_nation_pop_pci_020521_b.jpeg", device="jpeg", width = 6, height = 3, units = "in")
         
         ed<- ggplot(cnty_n_ratio_w2 %>% select(p_low_ed, `Data Measurement Year`) %>% mutate(Decade = as.character(`Data Measurement Year`))) + 
           geom_density(aes(x=p_low_ed, color=NULL, group = Decade, fill=Decade, alpha=0.9, stat(count)), trim=TRUE, bw=0.1) +
@@ -710,7 +728,7 @@ dat2<-community %>% st_drop_geometry(.) %>%
                                    wrk + theme( axis.title.y = element_blank()),
                                    ncol=2,nrow=2, common.legend = TRUE, legend = "bottom")
         figure1
-        ggsave("community_nation_ed_age_0922_b.jpeg", device="jpeg", width = 6, height = 6, units = "in")
+        ggsave("community_nation_ed_age_020521_b.jpeg", device="jpeg", width = 6, height = 6, units = "in")
         
         w<- ggplot(cnty_n_ratio_w2 %>% select(p_white_ho, `Data Measurement Year`) %>% mutate(Decade = as.character(`Data Measurement Year`))) + 
           geom_density(aes(x=p_white_ho, color=NULL, group = Decade, fill=Decade, alpha=0.9, stat(count)), trim=TRUE, bw=0.1) +
