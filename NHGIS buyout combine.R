@@ -126,11 +126,11 @@ sf.cnty <- sf.cnty %>% mutate(cnty_pop_density = cnty_pop/(Shape_area * 1e-6), c
   #plot(sf.nb_full[sf.nb_full$`Data Measurement Year`==1990 & sf.nb_full$`State Code`=="01","bg_pop"]) #quick test plot
   
 #Check for missing tract info
-  sf.ct_missed<- sf.ct %>% filter(., !(`NHGIS Integrated Geographic Unit Code` %in% sf.nb$`NHGIS Integrated Geographic Unit Code`)) #35560
-  sf.ct_missed<- sf.ct %>% filter(., !(`NHGIS Integrated Geographic Unit Code` %in% sf.nb_full$`NHGIS Integrated Geographic Unit Code`)) #7812 --> not perfect, but much better
-  sf.ct_missed<- sf.ct %>% filter(., !(`NHGIS Integrated Geographic Unit Code` %in% sf.nb_full$`NHGIS Integrated Geographic Unit Code`) & `Row Source Year` == 1990) #4547 --> as expected, most for earliest year
-  sf.ct_missed<- sf.ct %>% filter(., !(`NHGIS Integrated Geographic Unit Code` %in% sf.nb_full$`NHGIS Integrated Geographic Unit Code`) & `Row Source Year` == 2000) #2309
-  sf.ct_missed<- sf.ct %>% filter(., !(`NHGIS Integrated Geographic Unit Code` %in% sf.nb_full$`NHGIS Integrated Geographic Unit Code`) & `Row Source Year` == 2010) #956 --> unclear why some 2010 records don't match (should match by GEOID column)
+  sf.ct_missed<- sf.ct %>% filter(., !(`NHGIS Integrated Geographic Unit Code` %in% sf.nb$`NHGIS Integrated Geographic Unit Code`)) 
+  sf.ct_missed<- sf.ct %>% filter(., !(`NHGIS Integrated Geographic Unit Code` %in% sf.nb_full$`NHGIS Integrated Geographic Unit Code`)) 
+  sf.ct_missed<- sf.ct %>% filter(., !(`NHGIS Integrated Geographic Unit Code` %in% sf.nb_full$`NHGIS Integrated Geographic Unit Code`) & `Row Source Year` == 1990) 
+  sf.ct_missed<- sf.ct %>% filter(., !(`NHGIS Integrated Geographic Unit Code` %in% sf.nb_full$`NHGIS Integrated Geographic Unit Code`) & `Row Source Year` == 2000) 
+  sf.ct_missed<- sf.ct %>% filter(., !(`NHGIS Integrated Geographic Unit Code` %in% sf.nb_full$`NHGIS Integrated Geographic Unit Code`) & `Row Source Year` == 2010) 
 
 #########################################################################
 ### ADD FEMA Buyout Data Summary to Neighborhood Data ###################
